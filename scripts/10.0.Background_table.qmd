@@ -1,0 +1,552 @@
+---
+title: "Background Table 1"
+format: html
+editor: visual
+---
+
+This script compiles data for Table 1 (background table)
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+```{r}
+library(dplyr)
+library(openxlsx)
+
+```
+
+```{r}
+master <- readRDS(file.path(dir_data,"Masterfile.rds"))
+
+```
+
+```{r}
+barn <- master %>% filter(RM == "Barn") %>% 
+  dplyr::select(person_ID, RM, sex, age, age_grp, weight, height_cm, bmi, bmi_class, bmi_z, edu_combined, screentime_combined)
+
+
+ungdom <- master %>% filter(RM == "Ungdom") %>% 
+  dplyr::select(person_ID, RM, sex, age, age_grp, weight, height_cm, bmi, bmi_class, bmi_z, edu_combined, leisure, screentime_combined)
+
+
+vux <- master %>% filter(RM == "Vuxna") %>% 
+  dplyr::select(person_ID, RM, sex, age, age_grp, weight, height_cm, bmi, bmi_class, edu_combined, leisure, smoke)
+
+```
+
+First, create grouping variables and get number of observations (n) per group
+
+```{r}
+master2 <- master %>% 
+  mutate(
+    table_grp = case_when(
+      RM == "Vuxna" ~"Vuxna (all)",
+      RM == "Barn" ~paste0("Barn: ", age_grp),
+      RM == "Ungdom" ~paste0("Ungdom: ", age_grp),
+      TRUE ~NA_character_
+  )
+)
+
+```
+
+Different grouping used only for BMI-variable
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    bmi_grp = case_when(
+      RM == "Vuxna" ~"Vuxna (all)",
+      
+      RM == "Barn" ~paste0("Barn: ", age_grp),
+      
+      RM == "Ungdom" & age_grp != "Ak2_g" ~paste0("Ungdom: ", age_grp),
+      
+      RM == "Ungdom" & age_grp == "Ak2_g" & age < 18 ~"Ungdom: Ak2_g (<18)",
+      RM == "Ungdom" & age_grp == "Ak2_g" & age >=18 ~"Ungdom: Ak2_g (>=18)",
+      
+      TRUE ~NA_character_
+  )
+)
+```
+
+List of group names
+
+```{r}
+sort(unique(master2$table_grp))
+sort(unique(master2$bmi_grp))
+```
+
+Set ordering of groups for outputs
+
+```{r}
+table_grp_levels <- c(
+  "Vuxna (all)",
+  "Ungdom: Ak2_g",
+  "Ungdom: Ak8",
+  "Ungdom: Ak5",
+  "Barn: 4_ar",
+  "Barn: 18_manad"
+)
+
+bmi_grp_levels <- c(
+  "Vuxna (all)",
+  "Ungdom: Ak2_g (>=18)",
+  "Ungdom: Ak2_g (<18)",
+  "Ungdom: Ak8",
+  "Ungdom: Ak5",
+  "Barn: 4_ar",
+  "Barn: 18_manad"
+)
+
+master2 <- master2 %>% 
+  mutate(
+    table_grp = factor(table_grp, levels = table_grp_levels),
+    bmi_grp = factor(bmi_grp, levels = bmi_grp_levels)
+  )
+
+```
+
+Count n observations in each group (used as denominators for percentages)
+
+```{r}
+group_n <- master2 %>% count(table_grp, name = "N")
+bmi_n <- master2 %>% count(bmi_grp, name = "N")
+```
+
+General rules:
+
+-For categorical variables: Percentages based on total group N, including missing. Missing are shown as its own row.
+
+-For continuous variabes: n used (non-missing) reported separately. Missing values not included in median calculations.
+
+1.  SEX
+
+```{r}
+library(forcats)
+
+sex_tab <- master2 %>% 
+  mutate(
+    sex = fct_na_value_to_level(factor(sex), level = "Missing")
+  ) %>% 
+  count(table_grp, sex) %>% 
+  left_join(group_n, by = "table_grp") %>% 
+  mutate(
+    pct = 100 * n / N, 
+    n_pct = paste0(n, " (", round(pct, 1), "%)")
+  )
+
+sex_tab
+```
+
+2.  AGE
+
+Create an integer age variable representing compleded years
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    age_int = floor(age)
+  )
+
+```
+
+```{r}
+age_tab <- master2 %>% 
+  group_by(table_grp) %>% 
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(age_int)),
+    n_used = sum(!is.na(age_int)),
+    median_age_int = median(age_int, na.rm = T),
+    min_age_int = min(age_int, na.rm = T),
+    max_age_int = max(age_int, na.rm = T),
+    .groups = "drop"
+  )
+```
+
+Format
+
+```{r}
+age_tab <- age_tab %>% 
+  mutate(
+    age_median_range = paste0(
+      median_age_int,
+      " (", min_age_int, "-", max_age_int, ")"
+    ),
+missing = paste0(
+  n_missing,
+  " (", round(100 * n_missing / n_total, 1), "%)"
+    )
+  )
+
+age_tab
+```
+
+3.  WEIGHT
+
+```{r}
+weight_tab <- master2 %>% 
+  group_by(table_grp) %>% 
+  summarise(
+    N_total = n(),
+    N_missing = sum(is.na(weight)),
+    median_wt = median(weight, na.rm = T),
+    p25 = quantile(weight, 0.25, na.rm = T),
+    p75 = quantile(weight, 0.75, na.rm = T),
+    .groups = "drop"
+  )
+```
+
+```{r}
+weight_tab <- weight_tab %>% 
+  mutate(
+    weight_median_iqr = paste0(
+      round(median_wt, 1),
+      " (", round(p25, 1), "-", round(p75, 1), ")"
+    ),
+    missing = paste0(
+      N_missing,
+      " (", round(100 * N_missing / N_total, 1), "%)"
+    )
+  )
+
+weight_tab
+```
+
+4.  HEIGHT
+
+```{r}
+height_tab <- master2 %>% 
+  group_by(table_grp) %>% 
+  summarise(
+    N_total = n(),
+    N_missing = sum(is.na(height_cm)),
+    median_wt = median(height_cm, na.rm = T),
+    p25 = quantile(height_cm, 0.25, na.rm = T),
+    p75 = quantile(height_cm, 0.75, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    weight_median_iqr = paste0(
+      round(median_wt, 1),
+      " (", round(p25, 1), "-", round(p75, 1), ")"
+    ),
+    missing = paste0(
+      N_missing,
+      " (", round(100 * N_missing / N_total, 1), "%)"
+    )
+  )
+
+height_tab
+```
+
+5.  BMI / BMI-z score
+
+<!-- -->
+
+a)  BMI for adults only
+
+```{r}
+bmi_tab <- master2 %>% 
+  filter(
+    RM == "Vuxna" |
+      (RM == "Ungdom" & age >=18)
+  ) %>% 
+  group_by(bmi_grp) %>% 
+  summarise(
+    N_total = n(),
+    N_missing = sum(is.na(bmi)),
+    median_bmi = median(bmi, na.rm = T),
+    p25 = quantile(bmi, 0.25, na.rm = T),
+    p75 = quantile(bmi, 0.75, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    bmi_median_iqr = paste0(
+      round(median_bmi, 1),
+      " (", round(p25, 1), "-", round(p75, 1), ")"
+    ),
+    missing = paste0(
+      N_missing,
+      " (", round(100 * N_missing / N_total, 1), "%)"
+    )
+  )
+
+bmi_tab
+```
+
+```{r}
+
+bmiz_tab <- master2 %>% 
+  filter(
+    !(RM == "Vuxna" |
+      (RM == "Ungdom" & age >=18))
+  ) %>% 
+  group_by(bmi_grp) %>% 
+  summarise(
+    N_total = n(),
+    N_missing = sum(is.na(bmi_z)),
+    median_bmiz = median(bmi_z, na.rm = T),
+    p25 = quantile(bmi_z, 0.25, na.rm = T),
+    p75 = quantile(bmi_z, 0.75, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    bmiz_median_iqr = paste0(
+      round(median_bmiz, 1),
+      " (", round(p25, 1), "-", round(p75, 1), ")"
+    ),
+    missing = paste0(
+      N_missing,
+      " (", round(100 * N_missing / N_total, 1), "%)"
+    )
+  )
+
+
+
+bmiz_tab
+```
+
+Quick sanity check
+
+```{r}
+table(master2$bmi_grp, useNA = "ifany")
+
+bmi_tab %>% summarise(sum_N = sum(N_total))
+bmiz_tab %>% summarise(sum_N = sum(N_total))
+
+```
+
+6.  BMI-class
+
+Inspect current values
+
+```{r}
+sort(unique(master2$bmi_class))
+```
+
+Convert to factor and set order
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    bmi_class = factor(
+      bmi_class, 
+      levels = c(
+        "undervikt",
+        "normalvikt",
+        "övervikt",
+        "fetma"
+      )
+    )
+  )
+```
+
+Tabulate
+
+```{r}
+bmi_class_tab <- master2 %>% 
+  mutate(
+    bmi_class = fct_na_value_to_level(bmi_class, level = "Missing")
+  ) %>% 
+  count(table_grp, bmi_class) %>% 
+  left_join(group_n, by = "table_grp") %>% 
+  mutate(
+    pct = 100 * n / N,
+    n_pct = paste0(n, " (", round(pct, 1), "%)"
+  )
+)
+
+bmi_class_tab
+```
+
+7.  EDUCATION
+
+Inspect current values
+
+```{r}
+sort(unique(master2$edu_combined))
+```
+
+Convert to factor
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    edu_combined = factor(
+      edu_combined, 
+      levels = c("lower", "higher")
+    )
+  )
+```
+
+Tabulate
+
+```{r}
+edu_tab <- master2 %>% 
+  mutate(
+    edu_combined = fct_na_value_to_level(edu_combined, level = "Missing")
+  ) %>% 
+  count(table_grp, edu_combined) %>% 
+  left_join(group_n, by = "table_grp") %>% 
+  mutate(
+    pct = 100 * n / N,
+    n_pct = paste0(n, " (", round(pct, 1), "%)"
+  )
+)
+
+edu_tab
+
+```
+
+8.  PHYSICAL ACTIVITY
+
+Inspect values
+
+```{r}
+sort(unique(master$leisure))
+```
+
+Convert to factor and order
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    leisure = factor(
+      leisure, 
+      levels = c(
+        "sedentary",
+        "light",
+        "moderate",
+        "hard"
+      )
+    )
+  )
+```
+
+Tabulate
+
+```{r}
+pa_tab <- master2 %>% 
+  mutate(
+    leisure = fct_na_value_to_level(leisure, level = "Missing")
+  ) %>% 
+  count(table_grp, leisure) %>% 
+  left_join(group_n, by = "table_grp") %>% 
+  mutate(
+    pct = 100 * n / N,
+    n_pct = paste0(n, " (", round(pct, 1), "%)"
+  )
+)
+
+pa_tab
+```
+
+9.  SCREENTIME
+
+```{r}
+screen_tab <- master2 %>% 
+  filter(RM == "Barn") %>% 
+  group_by(table_grp) %>% 
+  summarise(
+    N_total = n(),
+    N_missing = sum(is.na(screentime_combined)),
+    median = median(screentime_combined, na.rm = T),
+    p25 = quantile(screentime_combined, 0.25, na.rm = T),
+    p75 = quantile(screentime_combined, 0.75, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    screentime_median_iqr = paste0(
+      round(median, 1),
+      " (", round(p25, 1), "-", round(p75, 1), ")"
+    ),
+    missing = paste0(
+      N_missing, 
+      " (", round(100 * N_missing / N_total, 1), "%)"
+    )
+  )
+
+screen_tab
+```
+
+10. SMOKING
+
+Inspect values
+
+```{r}
+sort(unique(master$smoke))
+```
+
+Convert to factor and order
+
+```{r}
+master2 <- master2 %>% 
+  mutate(
+    smoke = factor(
+      smoke, 
+      levels = c(
+        "never",
+        "former",
+        "occasional",
+        "daily"
+      )
+    )
+  )
+```
+
+Tabulate
+
+```{r}
+smoke_tab <- master2 %>% 
+  filter(RM == "Vuxna") %>% 
+  mutate(
+    smoke = fct_na_value_to_level(smoke, level = "Missing")
+  ) %>% 
+  count(table_grp, smoke) %>% 
+  left_join(group_n, by = "table_grp") %>% 
+  mutate(
+    pct = 100 * n / N,
+    n_pct = paste0(n, " (", round(pct, 1), "%)"
+  )
+)
+
+smoke_tab
+```
+
+Export tables to Excel
+
+```{r}
+
+library(writexl)
+
+write_xlsx(
+  list(
+    Sex = sex_tab,
+    Age = age_tab,
+    Weight = weight_tab,
+    Height = height_tab,
+    BMI = bmi_tab,
+    BMIz = bmiz_tab,
+    BMIclass = bmi_class_tab,
+    Education = edu_tab,
+    Screentime = screen_tab,
+    PA = pa_tab,
+    Smoking = smoke_tab
+  ),
+  path = file.path(dir_output, "Table1_background.xlsx")
+)
+
+```

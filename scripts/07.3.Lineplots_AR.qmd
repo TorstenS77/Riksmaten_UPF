@@ -1,0 +1,334 @@
+---
+title: "Nutrients vs AR, diagrams"
+author: "Torsten Sällström"
+format: html
+editor: visual
+---
+
+This script creates lineplots over vitamins and minerals intake based on quintiles of E% upf.
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+```{r message=FALSE, warning=FALSE}
+
+library(patchwork)
+library(openxlsx)
+library(dplyr)
+library (tidyr)
+library(purrr)
+library(ggplot2)
+
+```
+
+```{r}
+master <- readRDS(file.path(dir_data,"Masterfile.rds"))
+         
+```
+
+Prepare plotdata for adults
+
+```{r}
+
+# Divide EP_upf_mid into quintiles
+vux <- master %>%
+  filter(RM == "Vuxna") %>% 
+  mutate(quintile = paste0("Q", ntile(EP_upf_mid, 5))
+)
+#Group by quintiles, calculate summary statistics
+vux_summary <- vux %>% 
+  group_by(quintile) %>% 
+  summarise(across(pct_vitD:pct_se, list(
+      median = ~median(.x, na.rm = T),
+      p25 = ~quantile(.x, 0.25, na.rm = T),
+      p75 = ~quantile(.x, 0.75, na.rm = T)
+    ), .names = "{.col}_{.fn}"))
+
+```
+
+Histograms to check distribution
+
+```{r}
+
+ggplot(vux[vux$quintile == "Q3", ], aes(x = pct_vitC))+
+  geom_histogram(bins = 30, fill = "skyblue", color = "black")
+```
+
+Data is heavily skewed. Medians will be reported.
+
+Reshape to long format
+
+```{r}
+vux_long <- vux_summary %>% 
+  pivot_longer(
+    cols = -quintile,
+    names_to = c("variable", "stat"),
+    names_pattern = "^(.*)_(median|p25|p75)$"
+  ) %>% 
+  pivot_wider(
+    names_from = stat,
+    values_from = value
+  ) %>% 
+  mutate(group = "Adults")
+
+```
+
+Prepare plotdata for adolescents
+
+```{r}
+
+# Divide EP_upf_mid into quintiles
+ungdom <- master %>%
+  filter(RM == "Ungdom") %>% 
+  mutate(quintile = paste0("Q", ntile(EP_upf_mid, 5))
+)
+#Group by quintiles, calculate summary statistics
+ungdom_summary <- ungdom %>% 
+  group_by(quintile) %>% 
+  summarise(across(pct_vitD:pct_se, list(
+      median = ~median(.x, na.rm = T),
+      p25 = ~quantile(.x, 0.25, na.rm = T),
+      p75 = ~quantile(.x, 0.75, na.rm = T)
+    ), .names = "{.col}_{.fn}"))
+
+```
+
+Reshape to long format
+
+```{r}
+ungdom_long <- ungdom_summary %>% 
+  pivot_longer(
+    cols = -quintile,
+    names_to = c("variable", "stat"),
+    names_pattern = "^(.*)_(median|p25|p75)$"
+  ) %>% 
+  pivot_wider(
+    names_from = stat,
+    values_from = value
+  ) %>% 
+  mutate(group = "Adolescents")
+
+```
+
+Prepare plot data for children
+
+```{r}
+
+# Divide EP_upf_mid into quintiles
+barn <- master %>%
+  filter(RM == "Barn") %>% 
+  mutate(quintile = paste0("Q", ntile(EP_upf_mid, 5))
+)
+
+#Group by quintiles, calculate summary statistics
+barn_summary <- barn %>% 
+  group_by(quintile) %>% 
+  summarise(across(pct_vitD:pct_se, list(
+      median = ~median(.x, na.rm = T),
+      p25 = ~quantile(.x, 0.25, na.rm = T),
+      p75 = ~quantile(.x, 0.75, na.rm = T)
+    ), .names = "{.col}_{.fn}"))
+
+```
+
+Reshape to long format
+
+```{r}
+barn_long <- barn_summary %>% 
+  pivot_longer(
+    cols = -quintile,
+    names_to = c("variable", "stat"),
+    names_pattern = "^(.*)_(median|p25|p75)$"
+  ) %>% 
+  pivot_wider(
+    names_from = stat,
+    values_from = value
+  ) %>% 
+  mutate(group = "Young Children")
+
+```
+
+```{r}
+colnames(ungdom_long)
+```
+
+Merge datasets, add p-values
+
+```{r}
+df_long <- bind_rows(vux_long, ungdom_long, barn_long)
+```
+
+```{r}
+unique(df_long$group)
+
+```
+
+Convert grouping variable to factor
+
+```{r}
+
+df_long$group <- factor(df_long$group, levels = c("Adults", "Adolescents", "Young Children"))
+```
+
+1)  Define custom variable titles
+
+```{r}
+unique(df_long$variable)
+```
+
+```{r}
+plot_titles <- c(
+  pct_vitD = "Vitamin D",
+  pct_vitE = "Vitamin E",
+  pct_folate = "Folate",
+  pct_vitB12 = "Vitamin B12",
+  pct_vitC = "Vitamin C",
+  pct_fe = "Iron",
+  pct_ca = "Calcium",
+  pct_k = "Potassium",
+  pct_se = "Selenium"
+ )
+```
+
+2)  Create variables object and a list to store plots
+
+```{r}
+variables <- unique(df_long$variable)
+
+#Create a list to store plots
+plot_list <-  list()
+```
+
+IQR is used as error bars
+
+```{r}
+for(var in variables){
+  data_subset <- df_long %>% filter(variable == var)
+ 
+  p <- ggplot(data_subset, aes(x = quintile, y = median, group = group, color = group, linetype = group, shape = group)) +
+    theme_classic()+
+    geom_line(size = 1)+
+     scale_linetype_manual(values = c("Adults" = "solid", "Adolescents" = "dashed", "Young Children" = "dashed"))+
+    geom_point(position = position_dodge(width = 0.3), size = 4)+
+     scale_shape_manual(values = c("Adults" = 16, "Adolescents" = 15, "Young Children" = 17)) +
+     scale_color_manual(values = c("Adults" = "royalblue3", "Adolescents" = "chartreuse3", "Young Children" = "indianred3"))+
+     guides(
+      color = guide_legend(override.aes = list(shape = c(16, 15, 17),
+                                               linetype = c("solid", "dashed", "dashed"))),
+      shape = "none",
+      linetype = "none"
+    ) +
+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 14)) +
+
+    geom_errorbar(aes(ymin = p25, ymax = p75), 
+                  position = position_dodge(width = 0.3),
+                  width = 0.1,
+                  linetype = "solid") +
+    geom_hline(yintercept = 100, linetype = "dotted", color = "black") +
+    annotate("text", x = 1, y = 102, label = "AR", hjust = 2, vjust = 0, size = 4) +
+  
+     labs(title = plot_titles[[var]],
+           x = "quintiles of E% UPF",
+           y = "Median intake (% of AR)",
+           color = NULL,
+           linetype = NULL)+
+
+      theme(plot.title = element_text(size = 16, face = "bold"),
+            panel.grid = element_blank(),
+            legend.position = "bottom",
+            plot.margin = margin(10, 10, 10, 30), # (top, right, bottom, left)
+            axis.line = element_line(color = "black"),
+            axis.ticks = element_line(color = "black"),
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank()
+          )
+  
+ 
+  print(p)
+  
+  plot_list[[var]] <-p
+}
+
+```
+
+Combine plots into one image
+
+```{r}
+
+library(patchwork)
+
+th <- theme(
+        legend.position = "none",
+        legend.box.margin = margin(t=40),
+        plot.margin = margin(10, 10, 10, 30), # (top, right, bottom, left)
+        legend.title = element_blank(),
+        legend.text = element_text(size = 20),
+        legend.key.size = unit(1.2, "lines")
+  ) 
+
+plot_list2 <- lapply(plot_list, function(p) p + theme(legend.position = "none"))
+
+lineplots <- wrap_plots(plot_list2, ncol = 3) +
+  plot_layout(guides = "collect")
+
+print(lineplots)
+
+```
+
+Combine plots into one figure
+
+```{r}
+# Save the combined plot
+ggsave(
+  filename = file.path(dir_output, "Lineplots.png"), 
+  plot = lineplots, 
+  width = 16, 
+  height = 12,
+  dpi = 300
+)
+
+```
+
+Extract legend only
+
+```{r}
+library(grid)
+
+p1 <- plot_list[[1]] + theme(legend.position = "bottom")
+g <- ggplotGrob(p1)
+idx <- which(g$layout$name == "guide-box-bottom")
+
+leg <- g$grobs[[idx]]
+
+grid.newpage()
+grid.draw(leg)
+
+
+```
+
+Save legend as image
+
+```{r}
+png("Legend_only.png",
+    width = 3000, 
+    height = 600,
+    res = 300)
+grid::grid.newpage()
+grid::grid.draw(leg)
+dev.off()
+
+```

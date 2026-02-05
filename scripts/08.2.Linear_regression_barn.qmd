@@ -1,0 +1,1149 @@
+---
+title: "Linear regression of BMI-z and weight status among children 4 years old"
+format: html
+editor: visual
+---
+
+1) Multiple imputation
+2) Linear regression with logBMI as dependent variable
+3) Poisson regression with robust variance for Prevalence ratios of overweight/obesity
+Dataset: Young children
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+```{r message=FALSE, warning=FALSE}
+library(openxlsx)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+library(forcats)
+```
+
+Import data
+
+```{r}
+master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+```
+
+Include only children from the 4 years old age group
+
+```{r}
+barn <- master %>% 
+  filter(age_grp == "4_ar") %>% 
+  dplyr::select(person_ID, bmi, bmi_z, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, sex, age, edu_combined, screentime_combined, nrf, kcal, ED_nobev)
+
+```
+
+Convert selected variables to factors
+
+```{r}
+barn <- barn %>% 
+  mutate(
+    sex = as.factor(sex),
+    edu_combined = as.factor(edu_combined),
+    overweight = as.factor(overweight),
+  )
+
+```
+
+Divide the dataset in tertiles based on the variable EP_upf
+
+```{r}
+barn <- barn %>% 
+  mutate(
+    tertile_low = factor(paste0("T", ntile(EP_upf_low, 3)), levels = paste0("T", 1:3)),
+    tertile_mid = factor(paste0("T", ntile(EP_upf_mid, 3)), levels = paste0("T", 1:3)),
+    tertile_up = factor(paste0("T", ntile(EP_upf_up, 3)), levels = paste0("T", 1:3)),
+  )
+
+```
+
+Scale predictor variable
+
+```{r}
+barn$EP_upf_low_10 <- barn$EP_upf_low / 10
+barn$EP_upf_mid_10 <- barn$EP_upf_mid / 10
+barn$EP_upf_up_10 <- barn$EP_upf_up / 10
+```
+
+Count number of individuals with NA for bmi_z
+
+```{r}
+barn4 <- barn[!is.na(barn$bmi_z), ]
+
+```
+
+```{r}
+nrow(barn)
+nrow(barn4)
+
+sum(is.na(barn$bmi_z))
+```
+
+Values in the range -5 to +5 are deemed biologically plausible. Other values are removed.
+
+```{r}
+barn4 <- barn4[barn4$bmi_z >= -5 & barn4$bmi_z <=5, ]
+
+nrow(barn4)
+```
+
+Double check so that overweight category is correctly defined
+
+```{r}
+barn4 <- barn4 %>% 
+  mutate(
+    overweight_check = case_when(
+      is.na(bmi_z) ~NA_character_,
+      sex == "M" & bmi_z >= 1.310 ~"yes",
+      sex == "F" & bmi_z >= 1.244 ~"yes",
+      TRUE ~"no"
+    ),
+overweight_check = factor(overweight_check, levels = levels(overweight))
+ )
+
+#compare
+barn4 %>% count(overweight, overweight_check)
+```
+
+MULTIPLE IMPUTATION
+
+```{r}
+library(mice)
+library(miceadds)
+library(broom)
+
+```
+
+Prepare for imputation
+
+```{r}
+
+imp_data <- as.data.frame(barn4)
+
+#Define variables to exclude from imputation
+exclude_vars <- c("bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+
+
+pred <- make.predictorMatrix(imp_data)
+
+#Outcomes not used to predict, not imputed
+pred[, exclude_vars] <- 0
+pred[exclude_vars,] <- 0
+
+#ID not used either
+pred[, "person_ID"] <- 0
+pred["person_ID", ] <- 0
+
+#Method vector
+meth <- make.method(imp_data)
+
+#Outcomes and ID should not be imputed
+meth[exclude_vars] <- ""
+meth["person_ID"] <- ""
+
+#Sanity checks
+stopifnot(is.matrix(pred))
+stopifnot(all(rownames(pred) == names(imp_data)))
+stopifnot(all(colnames(pred)== names(imp_data)))
+
+```
+
+Run mice
+
+```{r}
+barn4_imputed <- mice(
+  imp_data,
+  m = 20,
+  predictorMatrix = pred,
+  method = meth,
+  seed = 123
+)
+
+```
+
+```{r}
+summary(barn4_imputed)
+```
+
+Inspect methods
+
+```{r}
+barn4_imputed$method
+```
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_mid_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum_mid <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum_mid
+```
+
+MODEL 1
+
+```{r}
+model1 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum_mid <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum_mid
+```
+
+MODEL 2 - model 1 + kcal
+
+```{r}
+model2 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum_mid <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum_mid
+```
+
+MODEL 2 w/ interaction terms
+
+```{r}
+model2 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_mid_10 * screentime_combined + age + sex + edu_combined + screentime_combined + nrf)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum
+```
+
+No interaction effects discovered
+
+MODEL 3 - model 2 + nrf
+
+```{r}
+model3 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum_mid <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum_mid
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = crude_pooled_sum_mid,
+    Model1 = model1_pooled_sum_mid,
+    Model2 = model2_pooled_sum_mid,
+    Model3 = model3_pooled_sum_mid
+  ),
+  file = file.path(dir_output, "Regression_BMI_barn4_mid.xlsx"),
+  overwrite = TRUE
+)
+```
+
+LOWER BOUND
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_low_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum_low <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum_low
+```
+
+MODEL 1
+
+```{r}
+model1 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum_low <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum_low
+```
+
+MODEL 2
+
+```{r}
+model2 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum_low <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum_low
+```
+
+MODEL 3
+
+```{r}
+model3 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum_low <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum_low
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = crude_pooled_sum_low,
+    Model1 = model1_pooled_sum_low,
+    Model2 = model2_pooled_sum_low,
+    Model3 = model3_pooled_sum_low
+  ),
+  file = file.path(dir_output, "Regression_BMI_barn4_low.xlsx"),
+  overwrite = TRUE
+)
+```
+
+UPPER BOUND
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_up_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum_up <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum_up
+```
+
+MODEL 1
+
+```{r}
+model1 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum_up <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum_up
+```
+
+MODEL 2
+
+```{r}
+model2 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum_up <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum_up
+```
+
+MODEL 3
+
+```{r}
+model3 <- with(
+  barn4_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum_up <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum_up
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = crude_pooled_sum_up,
+    Model1 = model1_pooled_sum_up,
+    Model2 = model2_pooled_sum_up,
+    Model3 = model3_pooled_sum_up
+  ),
+  file = file.path(dir_output,"Regression_BMI_barn4_up.xlsx"),
+  overwrite = TRUE
+)
+```
+
+LOGISTIC REGRESSION
+
+MIDDLE BOUND
+
+CRUDE MODEL
+
+```{r}
+logistic_crude <- with(barn4_imputed,
+                  glm(overweight ~tertile_mid, 
+                      family = binomial))
+
+log_pooled <- pool(logistic_crude)
+
+res <- summary(log_pooled, conf.int = T, exponentiate = F)
+
+#Convert to OR
+crude_or_table_mid <- res %>% 
+  mutate(
+    OR = exp(estimate),
+    conf.low = exp(conf.low),
+    conf.high = exp(conf.high)
+  ) %>% 
+  #Exclude intercept
+  filter(term !="(Intercept)") %>% 
+  dplyr::select(term, OR, conf.low, conf.high, p.value)
+
+crude_or_table_mid
+
+```
+
+MODEL 1
+
+```{r}
+logistic_model1 <- with(barn4_imputed,
+                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined, 
+                      family = binomial))
+
+log_pooled <- pool(logistic_model1)
+
+res <- summary(log_pooled, conf.int = T, exponentiate = F)
+
+#Convert to OR
+model1_or_table_mid <- res %>% 
+  mutate(
+    OR = exp(estimate),
+    conf.low = exp(conf.low),
+    conf.high = exp(conf.high)
+  ) %>% 
+  #Exclude intercept
+  filter(term !="(Intercept)") %>% 
+  dplyr::select(term, OR, conf.low, conf.high, p.value)
+
+model1_or_table_mid
+
+```
+
+MODEL 2
+
+```{r}
+logistic_model2 <- with(barn4_imputed,
+                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined + kcal, 
+                      family = binomial))
+
+log_pooled <- pool(logistic_model2)
+
+res <- summary(log_pooled, conf.int = T, exponentiate = F)
+
+#Convert to OR
+model2_or_table_mid <- res %>% 
+  mutate(
+    OR = exp(estimate),
+    conf.low = exp(conf.low),
+    conf.high = exp(conf.high)
+  ) %>% 
+  #Exclude intercept
+  filter(term !="(Intercept)") %>% 
+  dplyr::select(term, OR, conf.low, conf.high, p.value)
+
+model2_or_table_mid
+
+```
+
+MODEL 3
+
+```{r}
+logistic_model3 <- with(barn4_imputed,
+                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined + kcal + nrf, 
+                      family = binomial))
+
+log_pooled <- pool(logistic_model3)
+
+res <- summary(log_pooled, conf.int = T, exponentiate = F)
+
+#Convert to OR
+model3_or_table_mid <- res %>% 
+  mutate(
+    OR = exp(estimate),
+    conf.low = exp(conf.low),
+    conf.high = exp(conf.high)
+  ) %>% 
+  #Exclude intercept
+  filter(term !="(Intercept)") %>% 
+  dplyr::select(term, OR, conf.low, conf.high, p.value)
+
+model3_or_table_mid
+
+```
+
+Export summaries to excel
+
+```{r}
+tables_list_mid <- list(
+  Crude = crude_or_table_mid,
+  Model1 = model1_or_table_mid,
+  Model2 = model2_or_table_mid,
+  Model3 = model3_or_table_mid
+)
+
+write.xlsx(
+  tables_list_mid,
+  file = file.path(dir_output,"OR_tertiles_barn4_mid.xlsx"),
+  overwrite = TRUE
+)
+
+```
+
+PREVALENCE RATIOS
+
+Load packages for robust SE
+
+```{r}
+library(mitools)
+library(sandwich)
+library(tibble)
+library(miceadds)
+library(lmtest)
+```
+
+define covars
+
+```{r}
+covars0 <- character(0)
+covars1 <- c("age", "sex", "edu_combined", "screentime_combined")
+covars2 <- c("age", "sex", "edu_combined", "screentime_combined", "kcal")
+covars3 <- c("age", "sex", "edu_combined", "screentime_combined", "kcal", "nrf")
+```
+
+MIDDLE-BOUND
+
+CRUDE MODEL
+
+```{r}
+
+covars <- covars0
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Create a pooling function (Rubin's rules for one term)
+
+```{r}
+pool_pr_one_term <- function(robust, term) {
+  m <- length(robust)
+  
+  Q <- sapply(robust, function(x) x$coef[term])
+  U <- sapply(robust, function(x) x$vcov[term, term])
+  
+  Qbar <- mean(Q)
+  Ubar <- mean(U)
+  B <- var(Q)
+  T <- Ubar + (1+1/m)*B
+  se <- sqrt(T)
+  
+  z <- Qbar / se
+  p <- 2 * pnorm(-abs(z)) #two-sided Wald p-value
+  
+  data.frame(
+    term = term,
+    PR <- exp(Qbar),
+    LCL <- exp(Qbar - 1.96 * se),
+    UCL <- exp(Qbar + 1.96 * se),
+    logPR = Qbar,
+    SE = se,
+    z = z,
+    p_value = p,
+    stringsAsFactors = FALSE
+  )
+}
+```
+
+Build summary table
+
+```{r}
+PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_crude_mid
+```
+
+MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_mid
+```
+
+MODEL 2
+
+```{r}
+
+covars <- covars2
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model2_mid
+```
+
+MODEL 3
+
+```{r}
+
+covars <- covars3
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model3_mid
+```
+
+LOWER BOUND - MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_low <- factor(dat$tertile_low, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_low", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_lowT2", "tertile_lowT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_low
+```
+
+UPPER BOUND - MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(barn4_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_up <- factor(dat$tertile_up, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_up", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_upT2", "tertile_upT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_up
+```
+
+Create a descriptive table with n and % of overweight per tertile
+
+1)  Subset to those non-missing overweight
+
+```{r}
+dat <- subset(barn4, !is.na(overweight))
+```
+
+2)Create counts per tertile
+
+```{r}
+tab_n <- table(dat$tertile_mid, dat$overweight)
+tab_n
+```
+
+3)  Extract number overweight == yes and calculate percentage_grps
+
+```{r}
+n_yes <- tab_n[, "yes"]
+
+pct_yes <- prop.table(tab_n, margin = 1) [, "yes"] * 100
+
+```
+
+4)  Combine into a summary table
+
+```{r}
+desc_table <- data.frame(
+  tertile = rownames(tab_n),
+  n_overweight = as.numeric(n_yes),
+  percent_overweight = round(pct_yes, 1)
+)
+
+desc_table
+```
+
+Write to excel
+
+```{r}
+sheets <- list(
+  desc_table = desc_table,
+  PR_summary_crude_mid = PR_summary_crude_mid,
+  PR_summary_model1_mid = PR_summary_model1_mid,
+  PR_summary_model2_mid = PR_summary_model2_mid,
+  PR_summary_model3_mid = PR_summary_model3_mid,
+  PR_summary_model1_low = PR_summary_model1_low,
+  PR_summary_model1_up = PR_summary_model1_up
+)
+
+write.xlsx(sheets, 
+           file = file.path(dir_output, "PR_summaries_barn4.xlsx"), 
+           overwrite = TRUE)
+```
+
+Sensitivity analysis of Poisson regression on pre-imputed dataset
+
+1.  Prepare data for complete cases
+
+```{r}
+#Define covars
+
+covars <- covars3
+```
+
+```{r}
+dat <- barn4
+dat$overweight <- as.numeric(dat$overweight == "yes")
+
+dat$tertile_mid <-  factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+
+vars_model <- c("overweight", "tertile_mid", covars)
+dat_cc <- dat[complete.cases(dat[, vars_model]), ]
+```
+
+2.  Fit Poisson regression with log link
+
+```{r}
+form <- reformulate(
+  termlabels = c("tertile_mid", covars),
+  response = "overweight"
+)
+
+fit <- glm(
+  form,
+  family = poisson(link = "log"),
+  data = dat_cc
+)
+
+```
+
+3.  Obtain robust (sandwich) se
+
+```{r}
+robust_fit <- coeftest(fit, vcov. = vcovHC(fit, type = "HC0"))
+robust_fit
+```
+
+4)  Convert to PR and CI
+
+```{r}
+est <- robust_fit[, "Estimate"]
+se <- robust_fit[, "Std. Error"]
+
+PR <- exp(est)
+LCL <- exp(est - 1.96 * se)
+UCL <- exp(est + 1.96 * se)
+
+results <- data.frame(
+  term = names(est),
+  PR = PR,
+  LCL = LCL,
+  UCL = UCL,
+  p_value = robust_fit[, "Pr(>|z|)"]
+)
+
+results
+```

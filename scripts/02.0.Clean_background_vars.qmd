@@ -1,0 +1,694 @@
+---
+title: "Cleaning of raw background data"
+author: "Torsten Sällström"
+format: html
+editor: visual
+---
+
+Starting files (Excel format):
+
+RM_vuxna_background.xlsx = Demographic and anthropometric variables for RM adults RM_ungdom_background.xlsx = Demographic and anthropometric variables for RM ungdom RM_barn_background.xlsx = Demographic and anthropometric variables for RM barn
+
+RM_ungdom_questionnaire.xlsx = Answer to questionnaire regarding physical activity in adolescents.
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = F, recursive = T)
+
+```
+
+analysis code starts here
+
+```{r message=FALSE, warning=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+
+library(childsds)
+
+```
+
+Import data
+
+```{r}
+
+vux_bg <- read.xlsx(file.path(dir_data,"RM_vuxna_background.xlsx"))
+ungdom_bg <- read.xlsx(file.path(dir_data,"RM_ungdom_background.xlsx"))
+barn_bg <- read.xlsx(file.path(dir_data,"RM_barn_background.xlsx"))
+
+ungdom_pa <- read.xlsx(file.path(dir_data,"RM_ungdom_questionnaire_PA.xlsx"))
+
+```
+
+Standardize variables in background datasets
+
+Adults
+
+```{r}
+
+vux_bg <- vux_bg %>% 
+  mutate(
+   person_ID = paste0("V", as.character(PersonId)),
+   
+   RM = "Vuxna",
+                      
+   sex = case_when(
+   `Kön` == "Man" ~"M",
+   `Kön`== "Kvinna" ~"F",
+    TRUE ~NA_character_
+    ),
+   
+  age_grp = case_when(
+    `Ålder` >= 18 & `Ålder`<= 39 ~"18-39",
+    `Ålder` >= 40 & `Ålder`<= 59 ~"40-59",
+    `Ålder` >= 60 ~"60-80",
+    TRUE ~NA_character_
+  )
+)
+
+
+```
+
+Calculate BMI
+
+```{r}
+
+vux_bg <- vux_bg %>% 
+  mutate(
+    
+#Replace 0 with NA
+`Längd,.cm`= na_if(`Längd,.cm`, 0),
+`Vikt,.kg`= na_if(`Vikt,.kg`, 0),
+`Vikt`= na_if(`Vikt`, 0),
+
+#Height in meters
+height_m = `Längd,.cm`/ 100, 
+height_cm = `Längd,.cm`,
+
+#Create one unified weight variable. When both weight measurement points exist, use the mean value. If only one measurement exist, this should be used. 
+weight = case_when(
+  !is.na(`Vikt,.kg`) & !is.na(`Vikt`) ~
+    (`Vikt,.kg`+`Vikt`) / 2,
+  !is.na(`Vikt,.kg`) ~`Vikt,.kg`,
+  !is.na(`Vikt`) ~`Vikt`,
+  TRUE ~NA_real_
+),
+
+#Calculate BMI
+bmi = weight / (height_m ^2)
+) %>% 
+  rename(age = `Ålder`)
+
+```
+
+```{r}
+summary(vux_bg$bmi)
+```
+
+Create a BMI class variable for adults
+
+```{r}
+vux_bg <- vux_bg %>% 
+  mutate(bmi_class = case_when(
+    bmi < 18.5 ~"undervikt",
+    bmi >= 18.5 & bmi <=25.0 ~"normalvikt",
+    bmi >25.0 & bmi <= 30.0 ~"övervikt",
+    bmi > 30.0 ~"fetma"
+  )) %>% 
+  mutate(overweight = case_when(
+    bmi_class %in% c("övervikt", "fetma") ~"yes",
+    is.na(bmi_class) ~NA_character_,
+    TRUE ~"no"
+  )
+)
+
+```
+
+```{r}
+vux_bg %>% 
+  count(bmi_class, sort = T)
+```
+
+Recode variable for leisure activity
+
+```{r}
+vux_bg %>% 
+  count(Fritid, sort = T)
+```
+
+```{r}
+vux_bg <- vux_bg %>% 
+  mutate(
+    leisure = case_when(
+      Fritid == "Stilla" ~"sedentary",
+      Fritid == "Måttlig" ~"light",
+      Fritid == "Måttlig/Regelbunden" ~"moderate",
+      Fritid == "Regelbunden" ~"hard",
+      TRUE ~NA_character_
+    )
+  )
+```
+
+Recode smoking variable
+
+```{r}
+vux_bg %>% 
+  count(Röker, sort = T)
+```
+
+```{r}
+vux_bg <- vux_bg %>% 
+  mutate(
+    smoke = case_when(
+      `Röker` == "Aldrig rökt" ~"never",
+      `Röker` == "Har slutat" ~"former",
+      `Röker` == "Vid enstaka tillfällen" ~"occasional",
+      `Röker` == "Dagligen" ~"daily",
+      TRUE ~NA_character_
+    )
+  )
+```
+
+Recode education variable
+
+```{r}
+vux_bg %>% 
+  count(Högsta.utbildning, sort = T)
+```
+
+Recode into two categories
+
+```{r}
+vux_bg <- vux_bg %>% 
+  mutate(
+    edu_combined = case_when(
+      str_detect(`Högsta.utbildning`, "Uppgift saknas") ~NA_character_,
+      #<= 12 years
+      str_detect(`Högsta.utbildning`, "\\bFörgymnasial\\b") ~"lower",
+      str_detect(`Högsta.utbildning`, "\\bGymnasial\\b") ~"lower",
+      
+      #> 12 years
+      str_detect(`Högsta.utbildning`, "Eftergymnasial") ~"higher",
+      str_detect(`Högsta.utbildning`, "Forskarutbildning") ~"higher",
+      
+      TRUE ~NA_character_
+    )
+  )
+
+```
+
+```{r}
+vux_bg %>% 
+  count(edu_combined, sort = T)
+```
+
+Adolescents
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  mutate(
+    person_ID = paste0("U", as.character(Person_ID)),
+    
+    RM = "Ungdom",
+                       
+    sex = case_when(
+    kön %in% c("M", "F") ~kön, 
+    TRUE ~NA_character_
+),
+
+    age_grp = case_when(
+     `Årskurs`== "Åk 5" ~"Ak5",
+     `Årskurs`== "Åk 8" ~"Ak8",
+     `Årskurs`== "Åk 2 gymn" ~"Ak2_g",
+     TRUE ~NA_character_
+),
+    #Rename anthropometrics
+    age = na_if(Age, 0),
+    weight = na_if(Vikt, 0),
+    height_m = na_if(Längd, 0),
+    height_cm = height_m * 100,
+
+    #BMI
+    bmi = weight / (height_m ^2)
+) 
+```
+
+Recode education variable
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  mutate(
+    edu_combined = case_when(
+      Högsta.utb.i.hushållet.två.kategorier == ">12" ~"higher",
+      Högsta.utb.i.hushållet.två.kategorier == "<=12" ~"lower",
+      TRUE ~NA_character_
+    )
+  )
+```
+
+Calculate BMIz-score for individuals under 18
+
+```{r}
+
+#Create temporary sex-variable
+ungdom_bg <- ungdom_bg %>% 
+  mutate(sex_temp = case_when(
+    sex == "M" ~"male",
+    sex == "F" ~"female"
+  ))
+
+```
+
+Filter adolescents to include only cases younger than 18 years
+
+```{r}
+ungdom_bmi <- ungdom_bg %>% 
+  filter(age < 18) %>% 
+  mutate(bmi_z = sds(age = age,
+                     sex = sex_temp,
+                     item = "bmi",
+                     value = BMI,
+                     ref = cole_lobstein.ref)) %>% 
+  dplyr::select(person_ID, bmi_z)
+
+```
+
+Join back bmi_z to original data
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  left_join(ungdom_bmi, by = "person_ID")
+
+```
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  mutate(bmi_class = case_when(
+    
+    age >= 2 & age <= 18 & is.na(bmi_z) ~NA_character_,
+    
+    age < 18 & sex == "M" & bmi_z >=2.288 ~"fetma",
+    age < 18 & sex == "M" & bmi_z <2.288 & bmi_z >= 1.310 ~"övervikt",
+    age < 18 & sex == "M" & bmi_z <1.310 & bmi_z >= -1.014 ~"normalvikt",
+    age < 18 & sex == "M" & bmi_z < -1.014 ~"undervikt",
+    
+    age < 18 & sex == "F" & bmi_z >=2.192 ~"fetma",
+    age < 18 & sex == "F" & bmi_z <2.192 & bmi_z >= 1.244 ~"övervikt",
+    age < 18 & sex == "F" & bmi_z <1.244 & bmi_z >= -0.975 ~"normalvikt",
+    age < 18 & sex == "F" & bmi_z < -0.975 ~"undervikt",
+    
+    age >= 18 & is.na(bmi) ~NA_character_,
+    
+    age >= 18 & bmi < 18.5 ~"undervikt",
+    age >= 18 & bmi >= 18.5 & bmi <=25.0 ~"normalvikt",
+    age >= 18 & bmi >25.0 & bmi <= 30.0 ~"övervikt",
+    age >= 18 & bmi > 30.0 ~"fetma"
+  )
+)
+
+```
+
+```{r}
+ungdom_bg %>% 
+  group_by(age_grp) %>% 
+  count(bmi_class, sort = T)
+```
+
+Create overweight variable
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  mutate(
+    overweight = if_else(
+      bmi_class %in% c("övervikt", "fetma"),
+      "yes", 
+      if_else(is.na(bmi_class), NA_character_, "no")
+    )
+  )
+```
+
+Create and join physical activity variables for adolescents
+
+```{r}
+
+ungdom_pa <- ungdom_pa %>% 
+  mutate(
+    person_ID = paste0("U", as.character(PersonId)), 
+  )%>% 
+    rename_with(
+      ~"leisure",
+      starts_with("Vilken.av.följande.")
+    )
+  
+```
+
+```{r}
+ungdom_pa %>% 
+  count(leisure, sort = T)
+```
+
+Recode variable leisure
+
+```{r}
+ungdom_pa <- ungdom_pa %>% 
+  mutate(
+    leisure = case_when(
+      str_detect(leisure, "Läsa") ~"sedentary",
+      str_detect(leisure, "lätt aktivitet") ~"light",
+      str_detect(leisure, "motionsidrott") ~"moderate",
+      str_detect(leisure, "tävlingsidrott") ~"hard",
+      TRUE ~NA_character_
+    )
+  )
+```
+
+Join back to ungdom_bg
+
+```{r}
+ungdom_bg <- ungdom_bg %>% 
+  left_join(
+    ungdom_pa %>% dplyr::select(person_ID, leisure),
+    by = "person_ID"
+  )
+```
+
+Children
+
+```{r}
+sum(is.na(barn_bg$`ålder_startdatum`))
+sum(is.na(barn_bg$`ålder_mätdatum_år`))
+```
+
+Are there any cases that miss values for ålder_mätdatum_år but has values for ålder_startdatum?
+
+```{r}
+sum(
+  is.na(barn_bg$ålder_mätdatum_år) &
+  !is.na(barn_bg$ålder_startdatum)
+)
+
+```
+
+Create two age variables:
+
+age = ålder_startdatum. This is used as age variable throughout. age_bmiz = "ålder_mätdatum_år" when it exists. Otherwise, use values from "ålder_startdatum". This is used only to calculate bmi_z score.
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(
+    age_bmiz = coalesce(ålder_mätdatum_år, ålder_startdatum),
+    age = coalesce(ålder_startdatum, ålder_mätdatum_år)
+  )
+```
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(
+    person_ID = paste0("B", as.character(personid)),
+    sex = case_when(
+      `Kön.(från.pnr)`== "Flicka" ~"F",
+      `Kön.(från.pnr)`== "Pojke" ~"M",
+      TRUE ~NA_character_
+    ),
+    
+    RM = "Barn",
+    
+    age_grp = case_when(
+      `åldersgrupp`== "18 månader" ~"18_manad",
+      `åldersgrupp`== "4 år" ~"4_ar",
+      TRUE ~NA_character_
+    ),
+    
+    #Height in centimeters
+    height_cm = längd_cm,
+    
+    #Height in meters
+    height_m = längd_cm / 100,
+
+    #Weight
+    weight = as.numeric(gsub(",", ".", vikt_kg)),
+    
+    #0 -> NA
+    weight = if_else(weight == 0, NA_real_, weight),
+    
+    #BMI calculated
+    bmi = weight / (height_m ^2)
+  ) 
+
+```
+
+Create temporary sex variable for calculation of bmi_z
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(sex_temp = case_when(
+    sex == "M" ~"male",
+    sex == "F" ~"female"
+  ))
+```
+
+```{r}
+barn_bmi <- barn_bg %>% 
+  filter(age_grp == "4_ar") %>% 
+  mutate(bmi_z = sds(age = age_bmiz,
+                     sex = sex_temp,
+                     item = "bmi",
+                     value = BMI,
+                     ref = cole_lobstein.ref)) %>% 
+  dplyr::select(person_ID, bmi_z)
+
+```
+
+Join back
+
+```{r}
+barn_bg <- barn_bg %>% 
+  left_join(
+    barn_bmi, by = "person_ID"
+  )
+
+```
+
+Check bmi_z calculation:
+
+```{r}
+problems <- barn_bg %>% 
+  filter(
+    age_grp == "4_ar",
+    !is.na(bmi),
+    !is.na(height_m),
+    !is.na(age_bmiz),
+    is.na(bmi_z)
+  ) %>% 
+  dplyr::select(
+    age_grp,
+    age,
+    age_bmiz,
+    bmi,
+    height_m,
+    bmi_z
+  )
+
+problems
+```
+
+These cases are kept as NA, as the measurements were when they were much younger.
+
+Create bmi class for 4 year olds only
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(bmi_class = case_when(
+    
+    age_grp == "4_ar" & is.na(bmi_z) ~NA_character_,
+    
+    age_grp == "4_ar" & sex == "M" & bmi_z >=2.288 ~"fetma",
+    age_grp == "4_ar" & sex == "M" & bmi_z <2.288 & bmi_z >= 1.310 ~"övervikt",
+    age_grp == "4_ar" & sex == "M" & bmi_z <1.310 & bmi_z >= -1.014 ~"normalvikt",
+    age_grp == "4_ar" & sex == "M" & bmi_z < -1.014 ~"undervikt",
+    
+    age_grp == "4_ar" & sex == "F" & bmi_z >=2.192 ~"fetma",
+    age_grp == "4_ar" & sex == "F" & bmi_z <2.192 & bmi_z >= 1.244 ~"övervikt",
+    age_grp == "4_ar" & sex == "F" & bmi_z <1.244 & bmi_z >= -0.975 ~"normalvikt",
+    age_grp == "4_ar" & sex == "F" & bmi_z < -0.975 ~"undervikt"
+  )
+)
+
+```
+
+Crate overweight variable
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(
+    overweight = if_else(
+      bmi_class %in% c("övervikt", "fetma"),
+      "yes", 
+      if_else(is.na(bmi_class), NA_character_, "no")
+    )
+  )
+```
+
+Trim
+
+```{r}
+ungdom_bg$bmi_class <- trimws(ungdom_bg$bmi_class)
+barn_bg$bmi_class <- trimws(barn_bg$bmi_class)
+
+```
+
+Check
+
+```{r}
+barn_bg %>% 
+  count(bmi_class, sort = T)
+```
+
+Inspect screentime variables
+
+```{r}
+barn_bg %>% 
+  count(skärm_vardag, sort = T)
+```
+
+```{r}
+barn_bg %>% 
+  count(skärm_helgdag, sort = T)
+```
+
+Recode to minutes (numeric)
+
+```{r}
+#Helper function
+recode_screen_minutes <- function(x) {
+  case_when(
+    is.na(x) ~NA_real_,
+    x == "Vet ej" ~NA_real_,
+    x == "ingen enkät" ~NA_real_,
+    x == ".a" ~NA_real_,
+    x == "Ingen tid" ~0,
+    x == "15 minuter" ~15,
+    x == "30 minuter" ~30,
+    x == "45 minuter" ~45,
+    x == "1 timme" ~60,
+    x == "1,5 timmar" ~85,
+    x == "2 timmar" ~120,
+    x == "2,5 timmar" ~150,
+    x == "3 timmar" ~180,
+    x == "Mer än 3,5 timmar" ~210
+  )
+}
+```
+
+Apply function to screentime variables
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(
+    screentime_weekday = recode_screen_minutes(skärm_vardag),
+    screentime_weekend = recode_screen_minutes(skärm_helgdag)
+  )
+
+```
+
+```{r}
+table(barn_bg$screentime_weekday, useNA = "ifany")
+```
+
+Calculate a weighted average
+
+```{r}
+barn_bg <- barn_bg %>% 
+  mutate(
+    screentime_combined_min = case_when(
+      !is.na(screentime_weekday) & !is.na(screentime_weekend) ~
+        (5 * screentime_weekday + 2 * screentime_weekend) / 7,
+         
+      !is.na(screentime_weekday) & is.na(screentime_weekend) ~
+        screentime_weekday,
+      
+      is.na(screentime_weekday) & !is.na(screentime_weekend) ~
+        screentime_weekend, 
+      
+      TRUE ~NA_real_
+    )
+  )
+
+```
+
+Convert to hours
+
+```{r}
+barn_bg <- barn_bg %>% 
+    mutate(
+        screentime_combined = screentime_combined_min / 60
+    )
+```
+
+Rename education variable
+
+```{r}
+sort(unique(barn_bg$`Högsta.utb.hushållet`))
+```
+
+```{r}
+barn_bg <- barn_bg %>% 
+  rename(
+    edu_combined = `Högsta.utb.hushållet`
+  ) %>% 
+  mutate(edu_combined = case_when(
+    edu_combined == ">12 år" ~"higher",
+    edu_combined == "≤ 12 år" ~"lower",
+    TRUE ~edu_combined
+  )
+)
+```
+
+Define variables to keep
+
+```{r}
+select_safe <- function(df, vars) {
+  df %>% dplyr::select(any_of(vars))
+}
+
+vars_keep_vux <- c(
+  "person_ID", "sex", "age", "RM", "age_grp", "weight", "height_m", "height_cm", "bmi", "bmi_class", "overweight", "edu_combined", "leisure", "smoke"
+)
+
+vars_keep_ungdom <- c(
+  "person_ID", "sex", "age", "RM", "age_grp", "weight", "height_m", "height_cm", "bmi","bmi_z",  "bmi_class", "overweight", "edu_combined", "leisure"
+)
+
+vars_keep_barn <- c(
+  "person_ID", "sex", "age", "RM", "age_grp", "weight", "height_m", "height_cm", "bmi","bmi_z",  "bmi_class", "overweight", "edu_combined", "screentime_combined"
+)
+
+```
+
+Select
+
+```{r}
+vux_bg_clean <- select_safe(vux_bg, vars_keep_vux)
+ungdom_bg_clean <- select_safe(ungdom_bg, vars_keep_ungdom)
+barn_bg_clean <- select_safe(barn_bg, vars_keep_barn)
+
+```
+
+Save cleaned intake datasets as rds files
+
+```{r}
+saveRDS(vux_bg_clean, file.path(dir_output, "RM_vux_bg_clean.rds"))
+saveRDS(ungdom_bg_clean, file.path(dir_output, "RM_ungdom_bg_clean.rds"))
+saveRDS(barn_bg_clean, file.path(dir_output, "RM_barn_bg_clean.rds"))
+```

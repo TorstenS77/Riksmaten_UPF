@@ -1,0 +1,251 @@
+---
+title: "Quantile regression with intake as pct of AR as dependent variable"
+format: html
+editor: visual
+---
+
+This script runs quantile regression with intake of vitamins and mineras as % of average requirement (AR) as dependent variables. Childrens dataset.
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+```{r message=FALSE, warning=FALSE}
+library(openxlsx)
+library(dplyr)
+library(quantreg)
+```
+
+Import data
+
+```{r}
+master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+
+```
+
+Create dataset for regression
+
+```{r}
+barn <- master %>% 
+  filter(RM == "Barn") %>% 
+  dplyr::select(person_ID, sex, age, age_grp, bmi, edu_combined, screentime_combined, kcal, pct_vitD, pct_vitE, pct_folate, pct_vitB12, pct_vitC, pct_fe, pct_ca, pct_k, pct_se, EP_upf_low, EP_upf_up, EP_upf_mid)
+```
+
+Convert selected variables to factors
+
+```{r}
+barn <- barn %>% 
+  mutate(
+    sex = as.factor(sex),
+    edu_combined = as.factor(edu_combined),
+    screentime_combined = as.factor(screentime_combined),
+    age_grp = as.factor(age_grp)
+  )
+
+```
+
+Scale predictor variable
+
+```{r}
+barn$EP_upf_low_10 <- barn$EP_upf_low / 10
+barn$EP_upf_mid_10 <- barn$EP_upf_mid / 10
+```
+
+Define dependent variables
+
+```{r}
+dep_vars <- names(barn)[which(names(barn) == "pct_vitD"):which(names(barn) == "pct_se")]
+```
+
+Define covariates for model 1 and model 2
+
+```{r}
+covars_m1 <- c("age_grp", "sex", "edu_combined", "screentime_combined")
+covars_m2 <- c("age_grp", "sex", "edu_combined", "screentime_combined", "kcal")
+
+```
+
+Count complete cases
+
+```{r}
+
+n_total <- nrow(barn)
+
+n_complete <- sum(complete.cases(barn[, covars_m1]))
+
+
+n_obs_df <- data.frame(
+  n_total = n_total,
+  n_complete = n_complete,
+  perc_complete = round(100 * n_complete / n_total, 1)
+)
+```
+
+QUANTILE REGRESSION - Middle bound scenario
+
+Model 1 (main model)
+
+Define function to run qr on all outcomes
+
+```{r}
+qreg_orig <- function(data, outcome, predictor, covars_m1, 
+                      tau = 0.5,
+                      R = 2000, 
+                      seed = 123) {
+  
+  form <- as.formula(
+    paste0(outcome, "~", predictor, "+", paste(covars_m1, collapse = "+"))
+  )
+  
+  fit <- rq(form, tau = tau, data = data)
+  set.seed(seed)
+  sm <- summary(fit, se = "boot", R = R)
+  
+  #Extract row for predictor
+  row <- sm$coefficients[predictor, ]
+  beta <- row["Value"]
+  se <- row["Std. Error"]
+  pval <- row["Pr(>|t|)"]
+  
+  ci <- c(beta -1.96 * se, beta + 1.96 * se)
+  
+  #Return as a one-row data frame
+  data.frame(
+    outcome = outcome,
+    beta = beta,
+    ci_lower = ci[1],
+    ci_upper = ci[2],
+    p_value = pval,
+    stringsAsFactors = F
+  )
+  
+}
+```
+
+Apply function to all outcomes
+
+```{r}
+results <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_orig,
+         data = barn,
+         predictor = "EP_upf_mid_10",
+         covars = covars_m1,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+```
+
+Check stability
+
+```{r}
+qreg_orig(barn, outcome="pct_vitD", predictor = "EP_upf_mid_10", covars = covars_m1, seed=1)$beta
+
+qreg_orig(barn, outcome="pct_vitD", predictor = "EP_upf_mid_10", covars = covars_m1, seed=2)$beta
+```
+
+```{r}
+print(results)
+```
+
+Adjust for multiple testing
+
+```{r}
+results$padj <- p.adjust(results$p_value, method = "BH")
+```
+
+Rounding
+
+```{r}
+results_m1 <- results %>% 
+  mutate(
+    across(c(beta, ci_lower, ci_upper), ~round(.x, 1)),
+    padj = round(padj, 3)
+  )
+```
+
+```{r}
+print(results_m1)
+```
+
+Model 2 (energy adjusted)
+
+Apply function for quantile regression to all outcomes
+
+```{r}
+results_m2 <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_orig,
+         data = barn,
+         predictor = "EP_upf_mid_10",
+         covars = covars_m2,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+```
+
+Check stability
+
+```{r}
+qreg_orig(barn, outcome="pct_fe", predictor = "EP_upf_mid_10", covars = covars_m2, seed=1)$beta
+
+qreg_orig(barn, outcome="pct_fe", predictor = "EP_upf_mid_10", covars = covars_m2, seed=2)$beta
+```
+
+```{r}
+print(results_m2)
+```
+
+Adjust for multiple testing
+
+```{r}
+results_m2$padj <- p.adjust(results_m2$p_value, method = "BH")
+```
+
+Rounding
+
+```{r}
+results_m2 <- results_m2 %>% 
+  mutate(
+    across(c(beta, ci_lower, ci_upper), ~round(.x, 1)),
+    padj = round(padj, 3)
+  )
+```
+
+```{r}
+print(results_m2)
+```
+
+Export to excel
+
+```{r}
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "N complete cases")
+writeData(wb, sheet = "N complete cases", n_obs_df)
+
+addWorksheet(wb, "model_1")
+writeData(wb, sheet = "model_1", results_m1)
+
+addWorksheet(wb, "model_2")
+writeData(wb, sheet = "model_2", results_m2)
+
+saveWorkbook(wb, 
+             file = file.path(dir_output, "AR_results_barn.xlsx"), 
+             overwrite = T
+            )
+```

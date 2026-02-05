@@ -1,0 +1,217 @@
+---
+title: "Suspected misreporters"
+format: html
+editor: visual
+---
+This script calculates prediction interval to identify suspected misreporters
+
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+
+```{r}
+library(dplyr)
+library(openxlsx)
+
+```
+
+```{r}
+master3 <- readRDS(file.path("Masterfile.rds")) 
+```
+
+Check number of NA for height and weight
+
+```{r}
+na_by_RM <- master3 %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    height_NA = sum(is.na(height)),
+    weight_NA = sum(is.na(weight)),
+    either_NA = sum(is.na(height) | is.na(weight)),
+    height_NA_pct = 100 * height_NA / n,
+    weight_NA_pct = 100 * weight_NA / n,
+    either_NA_pct = 100 * either_NA / n,
+    .gropus = "drop"
+  )
+
+na_by_RM
+```
+
+Exclude cases with NA for height or weight
+
+```{r}
+master2 <- master3[!is.na(master3$height) | !is.na(master3$weight), ]
+```
+
+Exclude individuals with age \>18 years from RM Adolescents
+
+```{r}
+master1 <- master2 %>% 
+  filter(!(RM == "Ungdom" & age > 18))
+
+```
+
+Keep only individuals in Age_group 4 ys among Young Children
+
+```{r}
+master1 <- master1[!(master1$RM == "Barn" & master1$age_grp == "18_manad"), ]
+```
+
+Exclude individuals with BMI or BMI-z score outside biological plausible range
+
+```{r}
+master <- master1[!(
+  (master1$RM %in% c("Barn", "Ungdom") & (master1$bmi_z < -5 | master1$bmi_z > 5)) | (master1$RM == "Vuxna" & (master1$bmi < 12 | master1$bmi > 60))
+), ]
+
+```
+
+Create new variables
+
+```{r}
+
+#sex code
+master$sex_code <- ifelse(master$sex == "M", -1,
+                          ifelse(master$sex == "F", 1, NA))
+
+#MJ per day
+master$MJ_perday <- master$kcal * 0.004184
+
+```
+
+Define elevation (weighted average between Stockholm, Göteborg and Malmö)
+
+```{r}
+#Define elevation
+elevation <- 30
+```
+
+Create needed variables separately
+
+```{r}
+master <- master %>% 
+  mutate(
+    ln_weight = log(weight),
+    age2 = age^2,
+    age3 = age^3,
+    ln_elevate = log(.env$elevation)
+  )
+
+```
+
+Calculate equation
+
+```{r}
+
+master <- master %>% 
+  mutate(
+    ln_TEE = -0.2172 +
+      ln_weight * 0.4167 +
+      height_cm * 0.006565 -
+      age * 0.02054 +
+      age2 * 0.0003308 - 
+      age3 * 0.000001852 +
+      ln_elevate * 0.09126 -
+      sex_code * 0.04092 +
+      1 * 0.003589 -
+      height_cm * ln_elevate * 0.0006759 +
+      age * ln_elevate * 0.002018 -
+      age2 * ln_elevate * 0.00002262 -
+      sex_code * ln_elevate * 0.006947
+  )
+
+```
+
+Exponentiate back
+
+```{r}
+master$TEE_MJ <- exp(master$ln_TEE)
+
+```
+
+Convert to kcal for double checking
+
+```{r}
+
+master$TEE_kcal <- master$TEE_MJ * 239.006
+
+```
+
+```{r}
+summary(master$TEE_kcal)
+```
+
+Calculate lower and upper prediction intervals
+
+```{r}
+
+master$PI_low <- (master$TEE_MJ * 0.7466) - 1.5405
+master$PI_high <- (master$TEE_MJ * 1.3395) + 2.7668
+
+```
+
+Calculate number and percent of excluded individuals in each RM-group
+
+```{r}
+excluded_summary <- master %>% 
+  group_by(RM) %>% 
+  summarise(
+    total = n(),
+    excluded_under = sum(MJ_perday < PI_low, na.rm = T),
+    excluded_over = sum(MJ_perday > PI_high, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  
+mutate(
+  excluded = excluded_under + excluded_over,
+  kept = total - excluded,
+  percent_excluded = 100 * excluded / total
+)
+
+excluded_summary
+
+```
+
+Convert PI from MJ to kcal
+
+```{r}
+master$PI_low_kcal <- master$PI_low * 239.006
+master$PI_high_kcal <- master$PI_high * 239.006
+```
+
+Select variables of interest for sensitivity analysis
+
+```{r}
+
+vars_of_interest <- c("person_ID", "RM", "sex", "age", "age_grp", "kcal", "MJ_perday", "ED_nobev", "bmi", "bmi_class", "leisure", "edu_combined", "overweight", "smoke", "bmi_z", "screentime_combined", "EP_upf_mid", "EP_upf_low", "EP_upf_up", "PI_low", "PI_high", "TEE_MJ", "TEE_kcal")
+  
+```
+
+```{r}
+sensitivity <- master %>% 
+  dplyr::select(all_of(vars_of_interest))
+```
+
+Write to excel
+
+```{r}
+saveRDS(
+  sensitivity, 
+  file = file.path(dir_output, "Sensitivity.rds")
+)
+
+```

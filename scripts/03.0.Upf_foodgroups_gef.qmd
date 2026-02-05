@@ -1,0 +1,749 @@
+---
+title: "UPF intake by food group, UPF E% and GEF E%"
+author: "Torsten Sällström"
+format: html
+editor: visual
+---
+
+In this script we: 
+1) summarize the foodgroups that contribute most kcal from UPF on population level.
+2) calculate the dietary share of food items classified as GEF 
+3) collapses the dataset to one row per observatio and calculates E% UPF according to three classification scenarios. 
+
+Starting with the clean intake datasets created in step 02.1
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = F, recursive = T)
+
+```
+
+analysis code starts here
+
+```{r message=FALSE, warning=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+
+```
+
+Import data (choose dataset)
+
+```{r}
+vux <- readRDS(file.path(dir_data,"RM_vux_clean.rds"))
+ungdom <- readRDS(file.path(dir_data, "RM_ungdom_clean.rds"))
+barn <- readRDS(file.path(dir_data, "RM_barn_clean.rds"))
+
+```
+
+Combine datasets
+
+```{r}
+# Combine datasets
+data <- bind_rows(vux, barn, ungdom) 
+
+```
+
+Create list of unique food items reported
+
+```{r}
+food_lookup <- data %>%
+  group_by(food_ID) %>% 
+  summarise(food = first(food), .groups = "drop")
+
+```
+
+Check for cells with NA for food intake data per dataset
+
+```{r}
+
+check_cols <- setdiff(names(data), c("RM", "food_ID", "food"))
+
+na_summary <- data %>% 
+    group_by(RM, food_ID, food) %>% 
+    summarise(
+      across(all_of(check_cols), ~sum(is.na(.)), .names = "na_{col}"),
+      .groups = "drop"
+    ) %>% 
+    pivot_longer(
+      cols = starts_with("na_"),
+      names_to = "variable",
+      values_to = "n_NA"
+    ) %>% 
+    mutate(variable = sub("^na_", "", variable)) %>% 
+    filter(n_NA > 0) %>% 
+    arrange(RM, food_ID)
+  
+na_summary
+```
+
+Clean subgroups to prevent duplicates
+
+```{r}
+
+data <- data %>%
+ mutate( 
+   subgroup = str_trim(str_to_title(subgroup))) # Trim whitespace and standardize case
+
+summary(data$subgroup)
+
+n_distinct(data$subgroup)
+unique(data$subgroup)
+
+```
+
+Population-level E% UPF by foodgroup, stratified by RM
+
+```{r}
+upf_by_foodgroup <- data %>% 
+  filter(!is.na(subgroup)) %>% 
+  group_by(RM) %>% 
+  mutate(
+    total_kcal_RM = sum(kcal, na.rm = T)
+  ) %>% 
+  group_by(RM, subgroup) %>% 
+  summarise(
+    upf_mid_kcal_subgroup = sum(upf_mid_kcal, na.rm = T),
+    total_kcal_RM = first(total_kcal_RM),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    upf_mid_E_pct = 100 * upf_mid_kcal_subgroup / total_kcal_RM
+  )
+
+```
+
+Population-level E% UPF by foodgroup, stratified by RM and age-groups
+
+```{r}
+upf_by_foodgroup_and_agegroup <- data %>% 
+  filter(!is.na(subgroup), !is.na(age_grp)) %>% 
+  group_by(RM, age_grp) %>% 
+  mutate(
+    total_kcal_agegroup = sum(kcal, na.rm = T)
+  ) %>% 
+  group_by(RM, age_grp, subgroup) %>% 
+  summarise(
+    upf_mid_kcal_subgroup = sum(upf_mid_kcal, na.rm = T),
+    total_kcal_agegroup = first(total_kcal_agegroup),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    upf_mid_E_pct = 100 * upf_mid_kcal_subgroup / total_kcal_agegroup
+  )
+
+```
+
+Population-level E% UPF by subgroup, stratified by RM x sex
+
+Denominator: total kcal within each RM x sex
+
+```{r}
+upf_by_foodgroup_and_sex <- data %>% 
+  filter(
+    !is.na(subgroup),
+    !is.na(sex)
+  ) %>% 
+  group_by(RM, sex) %>% 
+  mutate(
+    total_kcal_grp = sum(kcal, na.rm = T)
+  ) %>% 
+  group_by(RM, sex, subgroup) %>% 
+  summarise(
+    upf_mid_kcal_subgroup = sum(upf_mid_kcal, na.rm = T),
+    total_kcal_grp = first(total_kcal_grp),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    upf_mid_E_pct = 100 * upf_mid_kcal_subgroup / total_kcal_grp
+  )
+  
+```
+
+Population-level E% UPF by subgroup, stratified by RM x age_grp x sex
+
+```{r}
+upf_by_foodgroup_age_and_sex <- data %>% 
+  filter(
+    !is.na(subgroup),
+    !is.na(age_grp),
+    !is.na(sex)
+  ) %>% 
+  group_by(RM, age_grp, sex) %>% 
+  mutate(
+    total_kcal_grp = sum(kcal, na.rm = T)
+  ) %>% 
+  group_by(RM, age_grp, sex, subgroup) %>% 
+  summarise(
+    upf_mid_kcal_subgroup = sum(upf_mid_kcal, na.rm = T),
+    total_kcal_grp = first(total_kcal_grp),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    upf_mid_E_pct = 100 * upf_mid_kcal_subgroup / total_kcal_grp
+  )
+
+```
+
+Validation step
+
+```{r}
+upf_by_foodgroup_age_and_sex %>% 
+  group_by(RM, age_grp, sex) %>% 
+  summarise(total_E_pct = sum(upf_mid_E_pct))
+
+upf_by_foodgroup_age_and_sex
+```
+
+Export foodgroup-results to one excelfile
+
+```{r}
+
+wb_groups <- createWorkbook()
+
+addWorksheet(wb_groups, "by RM only")
+writeData(wb_groups, "by RM only", upf_by_foodgroup)
+
+addWorksheet(wb_groups, "by agegroup")
+writeData(wb_groups, "by agegroup", upf_by_foodgroup_and_agegroup)
+
+addWorksheet(wb_groups, "by_sex")
+writeData(wb_groups, "by_sex", upf_by_foodgroup_and_sex)
+
+addWorksheet(wb_groups, "by age and sex")
+writeData(wb_groups, "by age and sex", upf_by_foodgroup_age_and_sex)
+
+saveWorkbook(wb_groups, 
+             file = file.path(dir_output, "Foodgroups_results.xlsx"),
+             overwrite = T
+          )
+
+```
+
+Calculate person-level total calories from GEF (=keyhole variable) and UPF
+
+1.  Calculate per person totals needed
+
+```{r}
+id_col <- "person_ID"
+
+totals <- data %>% 
+  group_by(across(all_of(id_col))) %>% 
+  summarise(
+    total_kcal = sum(kcal, na.rm = T),
+    RM = first(RM),
+    .groups = "drop"
+  )
+  
+```
+
+2.  GEF totals (only rows where keyhole == "yes")
+
+```{r}
+keyhole_totals <- data %>% 
+  filter(keyhole == "yes") %>% 
+  group_by(across(all_of(id_col))) %>% 
+  summarise(
+    keyhole_kcal = sum(kcal, na.rm = T),
+    keyhole_upf_kcal = sum(upf_mid_kcal, na.rm = T),
+    .groups = "drop"
+  )
+
+```
+
+Step 3 Combine and compute percentages GEF and UPF within GEF per person
+
+```{r}
+person_results <- totals %>% 
+  left_join(keyhole_totals, by = id_col) %>% 
+  mutate(
+    keyhole_kcal = coalesce(keyhole_kcal, 0),
+    keyhole_upf_kcal = coalesce(keyhole_upf_kcal, 0),
+
+# E% from foods classified as GEF
+  keyhole_pct = if_else(total_kcal > 0, 100 * keyhole_kcal / total_kcal, NA_real_),
+
+# E% within keyhole that's UPF
+  upf_within_keyhole_pct = if_else(keyhole_kcal > 0, 100 * keyhole_upf_kcal / keyhole_kcal, NA_real_)
+)
+```
+
+Persons with no GEF intake get keyhole_pct = 0 and upf_within_keyhole_pct = NA (denominator 0)
+
+```{r}
+GEF_summary <- person_results %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    mean_keyhole_pct = mean(keyhole_pct, na.rm = T),
+    sd_keyhole_pct = sd(keyhole_pct, na.rm = T),
+    median_keyhole_pct = median(keyhole_pct, na.rm = T),
+    p25_keyhole_pct = quantile(keyhole_pct, 0.25, na.rm = T),
+    p75_keyhole_pct = quantile(keyhole_pct, 0.75, na.rm = T),
+    
+    mean_upf_within_keyhole_pct = mean(upf_within_keyhole_pct, na.rm = T),
+    sd_upf_within_keyhole_pct = sd(upf_within_keyhole_pct, na.rm = T),
+    median_upf_within_keyhole_pct = median(upf_within_keyhole_pct, na.rm = T),
+    p25_upf_within_keyhole_pct = quantile(upf_within_keyhole_pct, 0.25, na.rm = T),
+    p75_upf_within_keyhole_pct = quantile(upf_within_keyhole_pct, 0.75, na.rm = T),
+    
+    .groups = "drop"
+  ) %>% 
+  arrange(RM)
+
+GEF_summary
+```
+
+Check number of NA per RM-group
+
+```{r}
+na_summary <- person_results %>% 
+  group_by(RM) %>% 
+  summarise(
+    n_persons = n(),
+    n_NA_upf_within_keyhole_pct = sum(is.na(upf_within_keyhole_pct)),
+.groups = "drop"
+  ) %>% 
+  arrange(RM)
+
+na_summary
+```
+
+```{r}
+zero_summary <- person_results %>% 
+  group_by(RM) %>% 
+  summarise(
+    n_persons = n(),
+    n_0_keyhole_kcal = sum(keyhole_kcal == 0, na.rm = T),
+.groups = "drop"
+  ) %>% 
+  arrange(RM)
+
+zero_summary
+```
+
+Export keyhole-results to one excelfile
+
+```{r}
+
+wb_gef <- createWorkbook()
+
+addWorksheet(wb_gef, "GEF_summary")
+writeData(wb_gef, "GEF_summary", GEF_summary)
+
+saveWorkbook(wb_gef, 
+             file = file.path(dir_output, "GEF_results.xlsx"), 
+             overwrite = T
+            )
+
+```
+
+Calculate Energy density (excluding beverages) and collapse dataset to one row per person
+
+```{r}
+#1. Check for zeros in variable gram
+sum(data$gram == 0, na.rm = T)
+
+```
+
+```{r}
+id_col <- "person_ID"
+
+ed_person <- data %>% 
+  filter(bev == "N", !is.na(gram), gram > 0, !is.na(kcal)) %>% 
+  group_by(across(all_of(id_col))) %>% 
+  summarise(
+    ED_nobev = sum(kcal, na.rm = T) / sum(gram, na.rm = T),
+    gram_nb_total = sum(gram, na.rm = T),
+    kcal_nb_total = sum(kcal, na.rm = T),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+sum(is.na(ed_person$ED_nobev))
+```
+
+Collapse dataset to get one row per person
+
+```{r}
+
+drop_vars <- c("food_ID", "food", "bev", "subgroup", "day_nr", "keyhole", "keyhole_ratio")
+keep_first <- c("person_ID", "sex", "RM", "age_grp", "day_count")
+
+df_collapsed <- data %>% 
+  group_by(across(all_of(id_col))) %>% 
+  summarise(
+    across(any_of(keep_first), first),
+    
+    #mean daily intake for all remaining numeric variables
+    across(
+      .cols = where(is.numeric) & !any_of(c(drop_vars, keep_first)),
+      .fns = ~sum(.x, na.rm = T) / first(day_count)
+    ),
+    .groups = "drop"
+  )
+
+```
+
+Join ED onto collapsed dataset
+
+```{r}
+
+df_collapsed <- df_collapsed %>% 
+  left_join(ed_person %>% dplyr::select(all_of(id_col), ED_nobev), by = id_col)
+
+```
+
+Calculate energy percentage from UPF
+
+```{r}
+df_collapsed <- df_collapsed %>% 
+  mutate(
+    EP_upf_low = upf_low_kcal / kcal * 100,
+    EP_upf_mid = upf_mid_kcal / kcal * 100,
+    EP_upf_up = upf_up_kcal / kcal * 100
+  )
+```
+
+MIDDLE BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_mid_kcal, na.rm = T),
+    p25_upf = quantile(upf_mid_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_mid_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_mid, na.rm = T),
+    sd_EP = sd(EP_upf_mid, na.rm = T),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_mid_kcal, na.rm = T),
+    p25_upf = quantile(upf_mid_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_mid_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_mid, na.rm = T),
+    sd_EP = sd(EP_upf_mid, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+#Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_mid_kcal ~sex, 
+      data = dat,
+      conf.int = T,
+      conf.level = 0.95,
+      exact = F
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_mid ~sex, 
+      data = dat,
+      var.equal = F
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+tests
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_mid <- summary_all %>% 
+  left_join(tests, by = "RM")
+
+results_mid
+```
+
+LOWER BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_low_kcal, na.rm = T),
+    p25_upf = quantile(upf_low_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_low_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_low, na.rm = T),
+    sd_EP = sd(EP_upf_low, na.rm = T),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_low_kcal, na.rm = T),
+    p25_upf = quantile(upf_low_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_low_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_low, na.rm = T),
+    sd_EP = sd(EP_upf_low, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+##Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_low_kcal ~sex, 
+      data = dat,
+      conf.int = T,
+      conf.level = 0.95,
+      exact = F
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_low ~sex, 
+      data = dat,
+      var.equal = F
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_low <- summary_all %>% 
+  left_join(tests, by = "RM")
+results_low
+
+```
+
+UPPER BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_up_kcal, na.rm = T),
+    p25_upf = quantile(upf_up_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_up_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_up, na.rm = T),
+    sd_EP = sd(EP_upf_up, na.rm = T),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_up_kcal, na.rm = T),
+    p25_upf = quantile(upf_up_kcal, 0.25, na.rm = T),
+    p75_upf = quantile(upf_up_kcal, 0.75, na.rm = T),
+    mean_EP = mean(EP_upf_up, na.rm = T),
+    sd_EP = sd(EP_upf_up, na.rm = T),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+##Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_up_kcal ~sex, 
+      data = dat,
+      conf.int = T,
+      conf.level = 0.95,
+      exact = F
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_up ~sex, 
+      data = dat,
+      var.equal = F
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_up <- summary_all %>% 
+  left_join(tests, by = "RM")
+results_up
+
+```
+
+Export to one excelfile
+
+```{r}
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "results_mid")
+writeData(wb, "results_mid", results_mid)
+
+addWorksheet(wb, "results_low")
+writeData(wb, "results_low", results_low)
+
+addWorksheet(wb, "results_up")
+writeData(wb, "results_up", results_up)
+
+saveWorkbook(wb, 
+             file = file.path(dir_output, "Table2_results.xlsx"), 
+             overwrite = T
+          )
+
+```
+
+Save collapsed dataset
+
+```{r}
+saveRDS(df_collapsed, file.path(dir_output, "Data_collapsed.rds"))
+```

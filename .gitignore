@@ -1,0 +1,32 @@
+#---Sensitive / generated ---
+data/*
+output/
+
+#---Common data file types ---
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.rds
+*.rdata
+*.RData
+*.sav
+*.dta
+*.sas7bdat
+
+!data/
+!data/Food_items.xlsx
+
+#---R / RStudio noise ---
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+#---Quarto rendered outputs / caches ---
+*_files/
+*.html
+*.pdf
+*.docx
+.quarto/
+-quarto_cache/

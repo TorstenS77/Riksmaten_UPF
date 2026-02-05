@@ -1,0 +1,435 @@
+---
+title: "Quantile regression"
+format: html
+editor: visual
+---
+
+This script runs quantile regression at the median on nutrient intake variables with E% from UPF (scaled by division of 10) as predictor. Adolescents dataset.
+
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = F, recursive = T)
+
+```
+
+Analytic code starts here
+
+```{r message=FALSE, warning=FALSE}
+library(openxlsx)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+library(quantreg)
+```
+
+Import data (choose dataset)
+
+```{r}
+master <- readRDS("Masterfile.rds") 
+
+```
+
+Filter for adolescents. Select variables of interest
+
+```{r}
+ungdom <- master %>% 
+  filter(RM == "Ungdom") %>% 
+  dplyr::select(person_ID, sex, age, age_grp, bmi, edu_combined, leisure, kcal, ED_nobev, EP_prot, fiber_dens, wholegrain_dens, EP_SFA, EP_addedsugars, naCl_dens, EP_keyhole, nrf, vitD_dens, vitE_dens, folate_dens, vitB12_dens, vitC_dens, fe_dens, ca_dens, k_dens, se_dens, EP_upf_low, EP_upf_up, EP_upf_mid)
+```
+
+Convert selected variables to factors
+
+```{r}
+ungdom <- ungdom %>% 
+  mutate(
+    sex = as.factor(sex),
+    age_grp = as.factor(age_grp),
+    edu_combined = as.factor(edu_combined),
+    leisure = as.factor(leisure),
+  )
+
+```
+
+Create quintiles for EP UPF mid, low and up
+
+```{r}
+ungdom <- ungdom %>% 
+  mutate(
+    quintile_mid = as.numeric(ntile(EP_upf_mid, 5)),
+    quintile_low = as.numeric(ntile(EP_upf_low, 5)),
+    quintile_up = as.numeric(ntile(EP_upf_up, 5))
+  )
+
+```
+
+Define dependent variables
+
+```{r}
+dep_vars <- names(ungdom)[which(names(ungdom) == "kcal"):which(names(ungdom) == "se_dens")]
+```
+
+Scale predictor variable
+
+```{r}
+ungdom$EP_upf_low_10 <- ungdom$EP_upf_low / 10
+ungdom$EP_upf_mid_10 <- ungdom$EP_upf_mid / 10
+```
+
+Define covariates
+
+```{r}
+covars <- c("age_grp", "sex", "edu_combined", "leisure")
+```
+
+Check for zero-reporters
+
+```{r}
+zero_counts <- sapply(ungdom[dep_vars], function(x) sum(x == 0))
+
+zero_counts_df <- data.frame(
+  variable = names(zero_counts),
+  n_zeros = as.integer(zero_counts),
+  row.names = NULL
+)
+
+print(zero_counts_df)
+```
+
+Count complete cases
+
+```{r}
+
+n_total <- nrow(ungdom)
+
+n_complete <- sum(complete.cases(ungdom[, covars]))
+
+
+n_obs_df <- data.frame(
+  n_total = n_total,
+  n_complete = n_complete,
+  perc_complete = round(100 * n_complete / n_total, 1)
+)
+```
+
+QUANTILE REGRESSION
+
+1.  MIDDLE BOUND
+
+Define function to run qr on all outcomes
+
+```{r}
+qreg_orig <- function(data, outcome, predictor, covars, 
+                      tau = 0.5,
+                      R = 2000, 
+                      seed = 123) {
+  
+  form <- as.formula(
+    paste0(outcome, "~", predictor, "+", paste(covars, collapse = "+"))
+  )
+  
+  fit <- rq(form, tau = tau, data = data)
+  set.seed(seed)
+  sm <- summary(fit, se = "boot", R = R)
+  
+  #Extract row for predictor
+  row <- sm$coefficients[predictor, ]
+  beta <- row["Value"]
+  se <- row["Std. Error"]
+  pval <- row["Pr(>|t|)"]
+  
+  ci <- c(beta -1.96 * se, beta + 1.96 * se)
+  
+  #Return as a one-row data frame
+  data.frame(
+    outcome = outcome,
+    beta = beta,
+    ci_lower = ci[1],
+    ci_upper = ci[2],
+    p_value = pval,
+    stringsAsFactors = F
+  )
+  
+}
+```
+
+Apply function to all outcomes
+
+```{r}
+results <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_orig,
+         data = ungdom,
+         predictor = "EP_upf_mid_10",
+         covars = covars,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+```
+
+Check stability
+
+```{r}
+qreg_orig(ungdom, outcome="kcal", predictor = "EP_upf_mid_10", covars = covars, seed=1)$beta
+
+qreg_orig(ungdom, outcome="kcal", predictor = "EP_upf_mid_10", covars = covars, seed=2)$beta
+```
+
+```{r}
+print(results)
+```
+
+Adjust for multiple testing
+
+```{r}
+results$padj <- p.adjust(results$p_value, method = "BH")
+```
+
+Function to customize rounding
+
+```{r}
+round_by_var <- function(outcome, value) {
+  if(outcome %in% c("kcal", "folate_dens","ca_dens","k_dens")) {
+    return(round(value, 0))
+  }else if(outcome == "ED_nobev") {
+    return(round(value, 2))
+  }else{
+    return(round(value,1))
+  }
+}
+```
+
+Apply function
+
+```{r}
+results_clean <- results
+results_clean$beta <- mapply(round_by_var, results_clean$outcome, results_clean$beta)
+results_clean$ci_lower <- mapply(round_by_var, results_clean$outcome, results_clean$ci_lower)
+results_clean$ci_upper <- mapply(round_by_var, results_clean$outcome, results_clean$ci_upper)
+
+#FOrmat CI column
+results_clean$CI <- paste0("(", results_clean$ci_lower, ", ", results_clean$ci_upper, ")")
+
+results_clean <- results_clean[, c("outcome", "beta", "CI", "padj")]
+colnames(results_clean)[4] <- "p_adj"
+```
+
+```{r}
+print(results_clean)
+```
+
+CONTRAST BETWEEN Q5 AND Q1
+
+```{r}
+qreg_contrast <- function(data, outcome, quintile_var, covars, 
+                      tau = 0.5,
+                      R = 2000, 
+                      seed = 123) {
+  
+  #make Q1 the reference
+  data[[quintile_var]] <- factor(data[[quintile_var]], levels = 1:5)
+  data[[quintile_var]] <- stats::relevel(data[[quintile_var]], ref = "1")
+  
+  form <- as.formula(
+    paste0(outcome, "~", quintile_var, "+", paste(covars, collapse = "+"))
+  )
+  
+  fit <- rq(form, tau = tau, data = data)
+  
+  set.seed(seed)
+  sm <- summary(fit, se = "boot", R = R)
+  
+  #Extract rows
+  coef_name <- paste0(quintile_var, "5")
+  row <- sm$coefficients[coef_name, ]
+
+  beta <- row["Value"]
+  se <- row["Std. Error"]
+  ci <- c(beta -1.96 * se, beta + 1.96 * se)
+  
+  #Return as a one-row data frame
+  data.frame(
+    outcome = outcome,
+    q5_vs_q1 = beta,
+    ci_lower = ci[1],
+    ci_upper = ci[2],
+    stringsAsFactors = F
+  )
+}
+```
+
+Apply function to all outcomes
+
+```{r}
+results_contrast <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_contrast,
+         data = ungdom,
+         quintile_var = "quintile_mid",
+         covars = covars,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+
+```
+
+```{r}
+
+print(results_contrast)
+
+```
+
+Apply function for rounding
+
+```{r}
+results_contrast_clean <- results_contrast
+results_contrast_clean$q5_vs_q1 <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$q5_vs_q1)
+results_contrast_clean$ci_lower <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$ci_lower)
+results_contrast_clean$ci_upper <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$ci_upper)
+
+#FOrmat CI column
+results_contrast_clean$CI <- paste0("(", results_contrast_clean$ci_lower, ", ", results_contrast_clean$ci_upper, ")")
+
+results_contrast_clean <- results_contrast_clean[, c("outcome", "q5_vs_q1", "CI")]
+
+```
+
+```{r}
+print(results_contrast_clean)
+```
+
+2.  LOWER BOUND
+
+Apply function for quantile regression to all outcomes
+
+```{r}
+results_low <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_orig,
+         data = ungdom,
+         predictor = "EP_upf_low_10",
+         covars = covars,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+```
+
+Check stability
+
+```{r}
+qreg_orig(ungdom, outcome="kcal", predictor = "EP_upf_low_10", covars = covars, seed=1)$beta
+
+qreg_orig(ungdom, outcome="kcal", predictor = "EP_upf_low_10", covars = covars, seed=2)$beta
+```
+
+```{r}
+print(results_low)
+```
+
+Adjust for multiple testing
+
+```{r}
+results_low$padj <- p.adjust(results_low$p_value, method = "BH")
+```
+
+Apply function for rounding
+
+```{r}
+results_clean_low <- results_low
+results_clean_low$beta <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$beta)
+results_clean_low$ci_lower <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$ci_lower)
+results_clean_low$ci_upper <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$ci_upper)
+
+#FOrmat CI column
+results_clean_low$CI <- paste0("(", results_clean_low$ci_lower, ", ", results_clean_low$ci_upper, ")")
+
+results_clean_low <- results_clean_low[, c("outcome", "beta", "CI", "padj")]
+colnames(results_clean_low)[4] <- "p_adj"
+```
+
+```{r}
+print(results_clean_low)
+```
+
+Contrast
+
+Apply function to all outcomes
+
+```{r}
+results_contrast_low <- do.call(
+  rbind,
+  lapply(dep_vars, qreg_contrast,
+         data = ungdom,
+         quintile_var = "quintile_low",
+         covars = covars,
+         tau = 0.5,
+         R = 2000,
+         seed = 123)
+)
+
+```
+
+```{r}
+print(results_contrast_low)
+```
+
+Apply function for rounding
+
+```{r}
+results_contrast_clean_low <- results_contrast_low
+results_contrast_clean_low$q5_vs_q1 <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$q5_vs_q1)
+results_contrast_clean_low$ci_lower <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$ci_lower)
+results_contrast_clean_low$ci_upper <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$ci_upper)
+
+#FOrmat CI column
+results_contrast_clean_low$CI <- paste0("(", results_contrast_clean_low$ci_lower, ", ", results_contrast_clean_low$ci_upper, ")")
+
+results_contrast_clean_low <- results_contrast_clean_low[, c("outcome", "q5_vs_q1", "CI")]
+
+```
+
+```{r}
+print(results_contrast_clean_low)
+```
+
+Export to excel
+
+```{r}
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "N complete cases")
+writeData(wb, sheet = "N complete cases", n_obs_df)
+
+addWorksheet(wb, "N zero counts")
+writeData(wb, sheet = "N zero counts", zero_counts_df)
+
+addWorksheet(wb, "Clean_mid")
+writeData(wb, sheet = "Clean_mid", results_clean)
+
+addWorksheet(wb, "Contrast_mid")
+writeData(wb, sheet = "Contrast_mid", results_contrast_clean)
+
+addWorksheet(wb, "Clean_low")
+writeData(wb, sheet = "Clean_low", results_clean_low)
+
+addWorksheet(wb, "Contrast_low")
+writeData(wb, sheet = "Contrast_low", results_contrast_clean_low)
+
+
+saveWorkbook(wb, 
+             file = file.path(dir_output, "Quantreg_results_ungdom.xlsx"),
+             overwrite = T
+            )
+```

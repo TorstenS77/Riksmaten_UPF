@@ -1,0 +1,412 @@
+---
+title: "Cleaning of raw intake data"
+author: "Torsten Sällström"
+format: html
+editor: source
+---
+
+Starting files:
+
+RM_vuxna_raw.xlsx = Riksmaten adults raw intake data RM_ungdom_raw.xlsx = Riksmaten adolescents raw intake data RM_barn_raw.xlsx = Riksmaten young children raw intake data
+
+RM_vuxna_bg_clean.rds = Demographic and anthropometric variables for RM adults RM_ungdom_bg_clean.rds = Demographic and anthropometric variables for RM ungdom RM_barn_bg_clean.rds = Demographic and anthropometric variables for RM barn
+
+Food_items.xlsx = List of all food items with their classification according to UPF and GEF 
+Salt_sugar.xlsx = List of all food items and their content of salt and added sugar per 100 g
+
+RDS files are created in cleaning step 02.1.
+
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = F, recursive = T)
+
+```
+
+analysis code starts here
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+
+```
+
+Import data
+
+```{r}
+vux1 <- read.xlsx(file.path(dir_data,"RM_vuxna_raw.xlsx"))
+ungdom1 <- read.xlsx(file.path(dir_data,"RM_ungdom_raw.xlsx"))
+barn1 <- read.xlsx(file.path(dir_data,"RM_barn_raw.xlsx"))
+
+vux_bg <- readRDS(file.path(dir_data,"RM_vux_bg_clean.rds"))
+ungdom_bg <- readRDS(file.path(dir_data,"RM_ungdom_bg_clean.rds"))
+barn_bg <- readRDS(file.path(dir_data,"RM_barn_bg_clean.rds"))
+
+food_items <- read.xlsx(file.path(dir_data,"Food_items.xlsx"))
+salt_sugar <- read.xlsx(file.path(dir_data,"Salt_sugar.xlsx"))
+
+```
+
+Rename selected variables
+
+Adults
+
+```{r}
+vux <- vux1 %>% 
+  rename(
+    person_ID = PersonId,
+    food_ID = LivsmedelsId,
+    food = Livsmedelsnamn,
+    gram = Livsmedel.mängd,
+    day_nr = Dag,
+    kcal = `Ener.(kcal)`,
+    carbs = `Kolh.(g)`,
+    fat = `Fett.(g)`,
+    protein = `Prot.(g)`,
+    fiber = `Fibe.(g)`,
+    wholegrain = `Fullk/tot.(g)`,
+    SFA = `Mfet.(g)`,
+    vitA = `VitA.(RE/µg)`,
+    vitD = `VitD.(µg)`,
+    vitE = `VitE.(mg)`,
+    folate = `Folat.(µg)`,
+    vitB12 = `VitB12.(µg)`,
+    vitC = `VitC.(mg)`,
+    p = `P.(mg)`,
+    fe = `Fe.(mg)`,
+    ca = `Ca.(mg)`,
+    k = `K.(mg)`,
+    mg = `Mg.(mg)`,
+    se = `Se.(µg)`,
+    zn = `Zn.(mg)`
+  )
+```
+
+Adolescents
+
+Convert Energy variable from kJ to kcal
+
+```{r}
+ungdom1 <- ungdom1 %>% 
+  mutate(
+    kcal = `Ener.(kJ)` / 4.184
+  )
+```
+
+```{r}
+ungdom <- ungdom1 %>% 
+  rename(
+    person_ID = PersonId,
+    food_ID = LivsmedelsId,
+    food = Livsmedelsnamn,
+    gram = Livsmedel.mängd,
+    day_nr = Dag,
+    carbs = `Kolh.(g)`,
+    fat = `Fett.(g)`,
+    protein = `Prot.(g)`,
+    fiber = `Fibe.(g)`,
+    wholegrain = `Fullk/tot.(g)`,
+    SFA = `Mfet.(g)`,
+    naCl = `NaCl.(g)`,
+    vitA = `VitA.(RE/µg)`,
+    vitD = `VitD.(µg)`,
+    vitE = `VitE.(mg)`,
+    folate = `Folat.(µg)`,
+    vitB12 = `VitB12.(µg)`,
+    vitC = `VitC.(mg)`,
+    p = `P.(mg)`,
+    fe = `Fe.(mg)`,
+    ca = `Ca.(mg)`,
+    k = `K.(mg)`,
+    mg = `Mg.(mg)`,
+    se = `Se.(µg)`,
+    zn = `Zn.(mg)`
+  )
+```
+
+Young children
+
+```{r}
+
+barn <- barn1 %>% 
+  rename(
+    person_ID = PersonId,
+    food_ID = LivsmedelsId,
+    food = Livsmedelsnamn,
+    gram = Livsmedel.mängd,
+    day_nr = Dag,
+    kcal = `Ener.(kcal)`,
+    carbs = `Kolh.(g)`,
+    fat = `Fett.(g)`,
+    protein = `Prot.(g)`,
+    fiber = `Fibe.(g)`,
+    sugar_added = `Socker/t.(g)`,
+    wholegrain = `Fullk/tot.(g)`,
+    SFA = `Mfet.(g)`,
+    naCl = `NaCl.(g)`,
+    vitA = `VitA.(RE/µg)`,
+    vitD = `VitD.(µg)`,
+    vitE = `VitE.(mg)`,
+    folate = `Folat.(µg)`,
+    vitB12 = `VitB12.(µg)`,
+    vitC = `VitC.(mg)`,
+    p = `P.(mg)`,
+    fe = `Fe.(mg)`,
+    ca = `Ca.(mg)`,
+    k = `K.(mg)`,
+    mg = `Mg.(mg)`,
+    se = `Se.(µg)`,
+    zn = `Zn.(mg)`
+  )
+```
+
+Convert food_ID to character
+
+```{r}
+vux$food_ID <- as.character(vux$food_ID)
+ungdom$food_ID <- as.character(ungdom$food_ID)
+barn$food_ID <- as.character(barn$food_ID)
+food_items$food_ID <- as.character(food_items$food_ID)
+salt_sugar$food_ID <- as.character(salt_sugar$food_ID)
+
+```
+
+Join values for NaCl and Added sugars (for Adults) and Added sugars (for Adolescents). Values are expressed as g/100 g. Calculate intake.
+
+```{r}
+
+#Create a key
+salt_sugar_key <- salt_sugar %>% 
+  dplyr::select(food_ID, salt_per100, sugar_added_per100) %>% 
+  distinct(food_ID, .keep_all = T)
+
+#Check for NA
+salt_sugar_key %>% 
+  summarise(
+    any_na_salt = any(is.na(salt_per100)),
+    any_na_sugar = any(is.na(sugar_added_per100))
+  )
+
+```
+
+```{r}
+#For adults
+
+vux <- vux %>% 
+  left_join(salt_sugar_key, by = "food_ID") %>% 
+  mutate(
+    naCl = gram * salt_per100 / 100,
+    sugar_added = gram * sugar_added_per100 / 100
+  )
+
+#For adolescents
+ungdom <- ungdom %>% 
+  left_join(salt_sugar_key, by = "food_ID") %>% 
+  mutate(
+    sugar_added = gram * sugar_added_per100 / 100
+  )
+
+```
+
+Initial cleaning
+
+```{r}
+#1 Prepare the food_items dataframe
+
+food_lookup <- food_items %>% 
+  dplyr::select(
+    food_ID, subgroup, bev,
+    keyhole, keyhole_ratio,
+    ratio_upf_low, ratio_upf_mid, ratio_upf_up
+  ) %>% 
+  distinct(food_ID, .keep_all = T)
+
+#2. Function to apply to vux / ungdom / barn
+clean_and_join <- function(df, prefix, rm_label, food_lookup) {
+  df %>% 
+    mutate(
+      person_ID = paste0(prefix, as.character(person_ID)),
+      RM = rm_label
+    ) %>% 
+    left_join(food_lookup, by = "food_ID") %>% 
+    group_by(person_ID) %>% 
+    mutate(
+      day_count = n_distinct(day_nr)
+    ) %>% 
+    ungroup() %>% 
+    mutate(
+      #GEF kcal
+      keyhole_kcal = kcal * keyhole_ratio,
+      
+      #UPF kcal by scenario
+      upf_low_kcal = kcal * ratio_upf_low,
+      upf_mid_kcal = kcal * ratio_upf_mid,
+      upf_up_kcal = kcal * ratio_upf_up
+    )
+}
+
+#3. Put datasets in one list and apply function
+datasets <- list(
+  vux = vux,
+  ungdom = ungdom,
+  barn = barn
+)
+
+prefixes <- c(
+  vux = "V",
+  ungdom = "U",
+  barn = "B"
+)
+
+rm_labels <- c(
+  vux = "Vuxna",
+  ungdom = "Ungdom",
+  barn = "Barn"
+)
+
+#4. Apply function
+datasets_clean <- imap(
+  datasets, 
+  ~clean_and_join(
+    df = .x, 
+    prefix = prefixes[[.y]], 
+    rm_label = rm_labels[[.y]],
+    food_lookup = food_lookup
+  )
+)
+
+
+#5. Write back to objects
+
+vux <- datasets_clean$vux
+ungdom <- datasets_clean$ungdom
+barn<- datasets_clean$barn
+
+```
+
+Sanity check
+
+```{r}
+vux %>% distinct(person_ID, day_count) %>% 
+  count(day_count)
+```
+
+Select vars to add from background datasets
+
+```{r}
+vars_keep <- c(
+  "person_ID",
+  "sex",
+  "age_grp"
+)
+```
+
+```{r}
+#Helper function
+add_bg_vars <- function(intake_df, bg_df, vars_keep) {
+  bg_key <- bg_df %>% 
+    dplyr::select(any_of(c("person_ID", vars_keep))) %>% 
+    distinct(person_ID, .keep_all = T)
+  
+  intake_df %>% 
+    left_join(bg_key, by = "person_ID")
+}
+
+```
+
+Apply to each intake dataset
+
+```{r}
+vux_final <- add_bg_vars(vux, vux_bg, vars_keep)
+ungdom_final <- add_bg_vars(ungdom, ungdom_bg, vars_keep)
+barn_final <- add_bg_vars(barn, barn_bg, vars_keep)
+
+```
+
+Select variables to keep in the clean dataset going forward
+
+```{r}
+vars_final <- c(
+  "person_ID",
+  "sex",
+  "RM",
+  "age_grp",
+  
+  "food_ID",
+  "food",
+  "bev",
+  "subgroup",
+  "day_nr",
+  "day_count",
+  
+  "gram",
+  "kcal",
+  "keyhole",
+  "keyhole_ratio",
+  "keyhole_kcal",
+  "upf_low_kcal",
+  "upf_mid_kcal",
+  "upf_up_kcal",
+  
+  "carbs",
+  "fat",
+  "protein",
+  "fiber",
+  "wholegrain",
+  "sugar_added",
+  "SFA",
+  "vitA",
+  "vitD",
+  "vitE",
+  "vitC",
+  "vitB12",
+  "folate",
+  "fe",
+  "ca",
+  "k",
+  "mg",
+  "se",
+  "zn",
+  "naCl"
+  
+)
+```
+
+Helper function to keep variables
+
+```{r}
+keep_vars <- function(df, vars_final) {
+  df %>% dplyr::select(any_of(vars_final))
+}
+
+```
+
+Apply
+
+```{r}
+vux_final <- keep_vars(vux_final, vars_final)
+ungdom_final <- keep_vars(ungdom_final, vars_final)
+barn_final <- keep_vars(barn_final, vars_final)
+
+```
+
+Save cleaned intake datasets as rds files
+
+```{r}
+saveRDS(vux_final, file.path(dir_output, "RM_vux_clean.rds"))
+saveRDS(ungdom_final, file.path(dir_output, "RM_ungdom_clean.rds"))
+saveRDS(barn_final, file.path(dir_output, "RM_barn_clean.rds"))
+```

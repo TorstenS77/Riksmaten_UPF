@@ -1,0 +1,1355 @@
+---
+title: "Linear regression weight outcomes"
+format: html
+editor: visual
+---
+
+1) Multiple imputation
+2) Linear regression with logBMI as dependent variable
+3) Poisson regression with robust variance for Prevalence ratios of overweight/obesity
+Dataset: Adults
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+Analytic code starts here
+
+```{r message=FALSE, warning=FALSE}
+library(openxlsx)
+library(dplyr)
+library (tidyr)
+library(stringr)
+library(purrr)
+library(forcats)
+```
+
+Import data (choose dataset)
+
+```{r}
+master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+
+```
+
+Create dataset for regression
+
+```{r}
+vux1 <- master %>% 
+  filter(RM == "Vuxna") %>% 
+  dplyr::select(person_ID, sex, age, edu_combined, leisure, nrf, smoke, kcal, ED_nobev, bmi, overweight, EP_upf_low, EP_upf_up, EP_upf_mid)
+
+```
+
+Convert selected variables to factors, log-transform bmi-variable
+
+```{r}
+vux1 <- vux1 %>% 
+  mutate(
+    sex = as.factor(sex),
+    edu_combined = as.factor(edu_combined),
+    leisure = as.factor(leisure),
+    smoke = as.factor(smoke),
+    overweight = as.factor(overweight),
+    logBMI = log(bmi)
+  )
+
+```
+
+Divide the dataset in tertiles based on the variable EP_upf
+
+```{r}
+vux1 <- vux1 %>% 
+  mutate(
+    tertile_low = factor(paste0("T", ntile(EP_upf_low, 3)), levels = paste0("T", 1:3)),
+    tertile_mid = factor(paste0("T", ntile(EP_upf_mid, 3)), levels = paste0("T", 1:3)),
+    tertile_up = factor(paste0("T", ntile(EP_upf_up, 3)), levels = paste0("T", 1:3)),
+  )
+
+```
+
+Scale predictor variable
+
+```{r}
+vux1$EP_upf_low_10 <- vux1$EP_upf_low / 10
+vux1$EP_upf_mid_10 <- vux1$EP_upf_mid / 10
+vux1$EP_upf_up_10 <- vux1$EP_upf_up / 10
+```
+
+Count number of individuals with NA for logBMI
+
+```{r}
+sum(is.na(vux1$logBMI))
+```
+
+Exclude individuals with NA for the outcome before imputation
+
+```{r}
+vux <- vux1[!is.na(vux1$logBMI),]
+
+nrow(vux)
+
+```
+
+Values outside the range of 12-60 were judged biologically implausible values
+
+```{r}
+vux$person_ID[vux$bmi <=12|vux$bmi >=60]
+
+```
+
+```{r}
+vux <- vux[vux$bmi >=12 & vux$bmi <=60, ]
+
+nrow(vux)
+```
+
+Double check so that "overweight" variable is correctly defined for all individuals
+
+```{r}
+#Define what should be overweight
+should_be_overweight <- vux$bmi > 25
+
+#Define what is actually coded as overweight
+is_overweight_yes <- vux$overweight == "yes"
+
+#Look for divergencies
+divergent_cases <- vux[
+  !is.na(vux$bmi) & !is.na(vux$overweight) &
+  (should_be_overweight !=is_overweight_yes),
+]
+
+#Inspect divergent cases
+divergent_cases[, c("person_ID", "bmi", "overweight")]
+
+```
+
+Check vif
+
+```{r}
+library(car)
+fit <- lm(logBMI ~EP_upf_mid_10 + age + sex + edu_combined + kcal + nrf, data = vux)
+fit
+vif(fit)
+```
+
+MULTIPLE IMPUTATION
+
+```{r}
+library(mice)
+library(miceadds)
+library(broom)
+
+```
+
+Prepare for imputation
+
+```{r}
+
+imp_data <- as.data.frame(vux)
+
+#Define variables to exclude from imputation
+exclude_vars <- c("logBMI", "bmi", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+
+pred <- make.predictorMatrix(imp_data)
+
+#Outcomes not used to predict, not imputed
+pred[, exclude_vars] <- 0
+pred[exclude_vars,] <- 0
+
+#ID not used either
+pred[, "person_ID"] <- 0
+pred["person_ID", ] <- 0
+
+#Method vector
+meth <- make.method(imp_data)
+
+#Outcomes and ID should not be imputed
+meth[exclude_vars] <- ""
+meth["person_ID"] <- ""
+
+#Sanity checks
+stopifnot(is.matrix(pred))
+stopifnot(all(rownames(pred) == names(imp_data)))
+stopifnot(all(colnames(pred)== names(imp_data)))
+
+```
+
+Run mice
+
+```{r}
+vux_imputed <- mice(
+  imp_data,
+  m = 20,
+  predictorMatrix = pred,
+  method = meth,
+  seed = 123
+)
+
+```
+
+```{r}
+summary(vux_imputed)
+```
+
+Inspect methods
+
+```{r}
+vux_imputed$method
+```
+
+How many individuals values were imputed?
+
+```{r}
+colSums(vux_imputed$where)
+```
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_mid_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum
+```
+
+```{r}
+log_table <- crude_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_crude <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_crude
+
+```
+
+Define sets of covaritates
+
+```{r}
+covars1 <- c("age", "sex", "edu_combined", "leisure", "smoke")
+covars2 <- c("age", "sex", "edu_combined", "leisure", "smoke", "kcal")
+covars3 <- c("age", "sex", "edu_combined", "leisure", "smoke", "kcal", "nrf")
+```
+
+MODEL 1 - sociodemographics only
+
+```{r}
+model1 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_mid_10 + age + sex + edu_combined + leisure + smoke)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum
+```
+
+```{r}
+log_table <- model1_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model1 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model1
+
+```
+
+MODEL 2 - sociodemographics + energy intake
+
+```{r}
+model2 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_mid_10 + age + sex + edu_combined + leisure + smoke + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum
+```
+
+```{r}
+log_table <- model2_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model2 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model2
+
+```
+
+MODEL 3 - sodiodemographics + energy + nrf
+
+```{r}
+model3 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_mid_10 + age + sex + edu_combined + leisure + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum
+```
+
+```{r}
+log_table <- model3_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model3 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model3
+
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = final_table_crude,
+    Model1 = final_table_model1,
+    Model2 = final_table_model2,
+    Model3 = final_table_model3
+  ),
+  file = file.path(dir_output,"Regression_BMI_vux_mid.xlsx"),
+  overwrite = TRUE
+)
+```
+
+LOWER BOUND
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_low_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum
+```
+
+```{r}
+log_table <- crude_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_crude <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_crude
+
+```
+
+Interpretation of estimate 1.0025: Since 1.0025 - 1 = 0.0025, it means that each 10% increase in E% upf was associated with 0.25% higher BMI.
+
+MODEL 1 - Sociodemographics only
+
+```{r}
+model1 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_low_10 + age + sex + edu_combined + leisure + smoke)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum
+```
+
+```{r}
+log_table <- model1_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model1 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model1
+
+```
+
+MODEL 2 - Sociodemographics + EI
+
+```{r}
+model2 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_low_10 + age + sex + edu_combined + leisure + smoke + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum
+```
+
+```{r}
+log_table <- model2_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model2 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model2
+
+```
+
+MODEL 3 - Sociodemographics + EI + diet quality
+
+```{r}
+model3 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_low_10 + age + sex + edu_combined + leisure + smoke + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum
+```
+
+```{r}
+log_table <- model3_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model3 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model3
+
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = final_table_crude,
+    Model1 = final_table_model1,
+    Model2 = final_table_model2,
+    Model3 = final_table_model3
+  ),
+  file = file.path(dir_output, "Regression_BMI_vux_low.xlsx"),
+  overwrite = TRUE
+)
+```
+
+UPPER BOUND
+
+CRUDE MODEL
+
+```{r}
+crude <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_up_10)
+)
+
+crude_pooled <- pool(crude)
+crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+crude_pooled_sum
+```
+
+```{r}
+log_table <- crude_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_crude <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_crude
+
+```
+
+Interpretation of estimate 1.0025: Since 1.0025 - 1 = 0.0025, it means that each 10% increase in E% upf was associated with 0.25% higher BMI.
+
+MODEL 1 - Sociodemographics only
+
+```{r}
+model1 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_up_10 + age + sex + edu_combined + leisure + smoke)
+)
+
+model1_pooled <- pool(model1)
+model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model1_pooled_sum
+```
+
+```{r}
+log_table <- model1_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model1 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model1
+
+```
+
+MODEL 2 - Sociodemographics + EI
+
+```{r}
+model2 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_up_10 + age + sex + edu_combined + leisure + smoke + kcal)
+)
+
+model2_pooled <- pool(model2)
+model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model2_pooled_sum
+```
+
+```{r}
+log_table <- model2_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model2 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model2
+
+```
+
+MODEL 3 - Sociodemographics + kcal + nrf
+
+```{r}
+model3 <- with(
+  vux_imputed,
+  lm(logBMI ~EP_upf_up_10 + age + sex + edu_combined + leisure + smoke + kcal + nrf)
+)
+
+model3_pooled <- pool(model3)
+model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+
+
+n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
+unique_n <- unique(n_per_imp)
+unique_n
+model3_pooled_sum
+```
+
+```{r}
+log_table <- model3_pooled_sum[2, c("term", "estimate", "conf.low", "conf.high", "p.value")]
+colnames(log_table) <- c("term", "estimate", "conf.low", "conf.high", "p.value")
+
+#Back-transform
+back_table <- log_table
+back_table$estimate = exp(log_table$estimate)
+back_table$conf.low = exp(log_table$conf.low)
+back_table$conf.high = exp(log_table$conf.high)
+
+#Calculate percentual change 
+perc_table <- log_table
+perc_table$estimate <- (exp(log_table$estimate) -1)*100
+perc_table$conf.low <- (exp(log_table$conf.low) -1)*100
+perc_table$conf.high <- (exp(log_table$conf.high) -1)*100
+
+final_table_model3 <- list(
+  log_scale = log_table,
+  back_trans = back_table,
+  perc_table = perc_table
+)
+
+final_table_model3
+
+```
+
+Export to excel
+
+```{r}
+write.xlsx(
+  list(
+    Crude = final_table_crude,
+    Model1 = final_table_model1,
+    Model2 = final_table_model2,
+    Model3 = final_table_model3
+  ),
+  file = file.path(dir_output,"Regression_BMI_vux_up.xlsx"),
+  overwrite = TRUE
+)
+
+```
+
+PREVALENCE RATIOS
+
+Load packages for robust SE
+
+```{r}
+library(mitools)
+library(sandwich)
+library(tibble)
+library(miceadds)
+library(lmtest)
+```
+
+define covars
+
+```{r}
+covars0 <- character(0)
+covars1 <- c("age", "sex", "edu_combined", "leisure", "smoke")
+covars2 <- c("age", "sex", "edu_combined", "leisure", "smoke", "kcal")
+covars3 <- c("age", "sex", "edu_combined", "leisure", "smoke", "kcal", "nrf")
+```
+
+MIDDLE-BOUND
+
+CRUDE MODEL
+
+```{r}
+
+covars <- covars0
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Create a pooling function (Rubin's rules for one term)
+
+```{r}
+pool_pr_one_term <- function(robust, term) {
+  m <- length(robust)
+  
+  Q <- sapply(robust, function(x) x$coef[term])
+  U <- sapply(robust, function(x) x$vcov[term, term])
+  
+  Qbar <- mean(Q)
+  Ubar <- mean(U)
+  B <- var(Q)
+  T <- Ubar + (1+1/m)*B
+  se <- sqrt(T)
+  
+  z <- Qbar / se
+  p <- 2 * pnorm(-abs(z)) #two-sided Wald p-value
+  
+  data.frame(
+    term = term,
+    PR <- exp(Qbar),
+    LCL <- exp(Qbar - 1.96 * se),
+    UCL <- exp(Qbar + 1.96 * se),
+    logPR = Qbar,
+    SE = se,
+    z = z,
+    p_value = p,
+    stringsAsFactors = FALSE
+  )
+}
+```
+
+Build summary table
+
+```{r}
+PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_crude_mid
+```
+
+MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_mid
+```
+
+MODEL 2
+
+```{r}
+
+covars <- covars2
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model2_mid
+```
+
+MODEL 3
+
+```{r}
+
+covars <- covars3
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_mid <- factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_mid", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_midT2", "tertile_midT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model3_mid
+```
+
+LOWER BOUND - MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_low <- factor(dat$tertile_low, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_low", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_lowT2", "tertile_lowT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_low
+```
+
+UPPER BOUND - MODEL 1
+
+```{r}
+
+covars <- covars1
+
+```
+
+```{r}
+models <- lapply(1:20, function(i) {
+  dat <- complete(vux_imputed, i)
+  
+  dat$overweight <- as.numeric(dat$overweight == "yes")
+  
+  dat <- subset(dat, !is.na(overweight))
+  
+  dat$tertile_up <- factor(dat$tertile_up, levels = c("T1", "T2", "T3"))
+  
+  form <- reformulate(
+    termlabels = c("tertile_up", covars),
+    response = "overweight"
+  )
+  
+  glm(form, family = poisson(link = "log"), data = dat)
+})
+
+```
+
+Extract robust estimates
+
+```{r}
+robust <- lapply(models, function(m) {
+  ct <- coeftest(m, vcov. = vcovHC(m, type = "HC0"))
+  list(
+    coef = coef(m),
+    vcov = vcovHC(m, type = "HC0"),
+    ct = ct
+  )
+})
+```
+
+Confirm coefficient names
+
+```{r}
+names(robust[[1]]$coef)
+```
+
+Chose the terms to pool
+
+```{r}
+terms_to_pool <- c("tertile_upT2", "tertile_upT3")
+```
+
+Build summary table
+
+```{r}
+PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(trm) {
+  pool_pr_one_term(robust, trm)
+}))
+
+PR_summary_model1_up
+```
+
+Create a descriptive table with n and % of overweight per tertile
+
+1)  Subset to those non-missing overweight
+
+```{r}
+dat <- subset(vux, !is.na(overweight))
+```
+
+2)Create counts per tertile
+
+```{r}
+tab_n <- table(dat$tertile_mid, dat$overweight)
+tab_n
+```
+
+3)  Extract number overweight == yes and calculate percentages
+
+```{r}
+n_yes <- tab_n[, "yes"]
+
+pct_yes <- prop.table(tab_n, margin = 1) [, "yes"] * 100
+
+```
+
+4)  Combine into a summary table
+
+```{r}
+desc_table <- data.frame(
+  tertile = rownames(tab_n),
+  n_overweight = as.numeric(n_yes),
+  percent_overweight = round(pct_yes, 1)
+)
+
+desc_table
+```
+
+Write to excel
+
+```{r}
+sheets <- list(
+  desc_table = desc_table,
+  PR_summary_crude_mid = PR_summary_crude_mid,
+  PR_summary_model1_mid = PR_summary_model1_mid,
+  PR_summary_model2_mid = PR_summary_model2_mid,
+  PR_summary_model3_mid = PR_summary_model3_mid,
+  PR_summary_model1_low = PR_summary_model1_low,
+  PR_summary_model1_up = PR_summary_model1_up
+)
+
+write.xlsx(sheets, 
+           file = file.path(dir_output, "PR_summaries_vux.xlsx"), 
+           overwrite = TRUE
+          )
+```
+
+Sensitivity analysis of Poisson regression on pre-imputed dataset
+
+1.  Prepare data for complete cases
+
+```{r}
+#Define covars
+
+covars <- covars3
+```
+
+```{r}
+dat <- vux
+dat$overweight <- as.numeric(dat$overweight == "yes")
+
+dat$tertile_mid <-  factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))
+
+vars_model <- c("overweight", "tertile_mid", covars)
+dat_cc <- dat[complete.cases(dat[, vars_model]), ]
+```
+
+2.  Fit Poisson regression with log link
+
+```{r}
+form <- reformulate(
+  termlabels = c("tertile_mid", covars),
+  response = "overweight"
+)
+
+fit <- glm(
+  form,
+  family = poisson(link = "log"),
+  data = dat_cc
+)
+
+```
+
+3.  Obtain robust (sandwich) se
+
+```{r}
+robust_fit <- coeftest(fit, vcov. = vcovHC(fit, type = "HC0"))
+robust_fit
+```
+
+4)  Convert to PR and CI
+
+```{r}
+est <- robust_fit[, "Estimate"]
+se <- robust_fit[, "Std. Error"]
+
+PR <- exp(est)
+LCL <- exp(est - 1.96 * se)
+UCL <- exp(est + 1.96 * se)
+
+results <- data.frame(
+  term = names(est),
+  PR = PR,
+  LCL = LCL,
+  UCL = UCL,
+  p_value = robust_fit[, "Pr(>|z|)"]
+)
+
+results
+```

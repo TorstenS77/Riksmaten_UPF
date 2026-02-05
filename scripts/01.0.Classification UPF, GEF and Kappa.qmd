@@ -1,0 +1,401 @@
+---
+title: "Classification, UPF, GEF, Kappa"
+author: "Torsten Sällström"
+format: html
+editor: visual
+---
+
+This script starts with an Excel-file named Food_itmes, containing variables: food_ID, rater1, rater2, maingroup, subgroup, keyhole, keyhole_ratio, ratio_upf_low, ratio, upf_mid and ratio_upf_up.
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = F, recursive = T)
+
+```
+
+analysis code starts here
+
+```{r, warning=FALSE, message=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library(ggplot2)
+library(psych)
+library(tidyr)
+
+```
+
+Import data
+
+```{r}
+
+data2 <- read.xlsx(file.path(dir_data, "Food_items.xlsx"))
+
+```
+
+Convert variable classes
+
+```{r}
+data2$food_ID <- as.character(data2$food_ID)
+data2$keyhole <- as.character(data2$keyhole)
+data2$keyhole_ratio <- as.factor(data2$keyhole_ratio)
+data2$rater1 <- as.factor(data2$rater1)
+data2$rater2 <- as.factor(data2$rater2)
+
+```
+
+Count number of unique maingroups and subgroups
+
+```{r}
+n_maingroup <- n_distinct(data2$maingroup)
+n_subgroup <- n_distinct(data2$subgroup)
+n_maingroup
+n_subgroup
+```
+
+Count the number and percent of upf
+
+```{r}
+data2 <- data2 %>% 
+  mutate(upf_category = case_when(
+    ratio_upf_mid == 0 ~"non-upf",
+    ratio_upf_mid >0 & ratio_upf_mid <1 ~"partly upf",
+    ratio_upf_mid == 1 ~"upf",
+  ))
+
+#Count percentages
+summary_table <- data2 %>% 
+  count(upf_category) %>% 
+  mutate(percent = round(100*n/sum(n), 1))
+
+print(summary_table)
+
+```
+
+Count by subgroup
+
+```{r}
+summary_by_subgroup <- data2 %>% 
+  group_by(subgroup, upf_category) %>% 
+  summarise(count = n(), .groups = "drop") %>% 
+  group_by(subgroup) %>% 
+  mutate(
+    total_in_subgroup = sum(count),
+    percent = round(100*count/total_in_subgroup, 1)
+  ) %>% 
+  ungroup()
+
+print(summary_by_subgroup)
+
+```
+
+Pivot to wide format
+
+```{r}
+wide_summary <- summary_by_subgroup %>% 
+  dplyr::select(subgroup, upf_category, count, percent, total_in_subgroup) %>% 
+  pivot_wider(
+    names_from = upf_category,
+    values_from = c(count, percent),
+    values_fill = 0
+  )
+
+print(wide_summary)
+```
+
+What share of food items were classified according to alternative scenarios?
+
+```{r}
+data2 %>% 
+  filter(!(ratio_upf_low == ratio_upf_up & 
+           ratio_upf_up == ratio_upf_mid)) %>% 
+  nrow()
+
+```
+
+KAPPA-calculation
+
+Select columns to keep
+
+```{r}
+data1 <- data2 %>% 
+  dplyr::select(food_ID, rater1, rater2, subgroup)
+
+```
+
+```{r}
+
+overall_table <- table(data1$rater1, data1$rater2)
+
+overall_kappa <- cohen.kappa(overall_table, alpha = 0.05)
+
+print(overall_kappa)
+```
+
+```{r}
+overall_n <- nrow(data1)
+overall_agreement <- sum(diag(overall_table)) / overall_n * 100
+overall_n
+overall_agreement
+
+```
+
+```{r}
+overall_row <- data.frame(
+  category = "Overall",
+  n = overall_n,
+  percent_agreement = overall_agreement,
+  kappa = overall_kappa$weighted.kappa,  # Use weighted kappa here
+  lower = overall_kappa$confid["weighted kappa", "lower"],
+  upper = overall_kappa$confid["weighted kappa", "upper"]
+)
+
+print(overall_row)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+calculate_kappa_by_category <- function(df) {
+  # Create the agreement table for this subset of data
+  agreement_table <- table(df$rater1, df$rater2)
+  
+  # Calculate Cohen's kappa for this subset
+  kappa <- cohen.kappa(agreement_table, alpha = 0.05)
+  
+  # Count the number of items in this subset
+  n_items <- nrow(df)
+  
+  # Calculate correct agreement (diagonal of the table)
+  correct_agreement <- sum(diag(agreement_table))
+  
+  # Calculate percent agreement
+  percent_agreement <- correct_agreement / n_items * 100
+  
+  # Return a data frame with the results for this category
+return(data.frame(
+  n = n_items,
+  percent_agreement = percent_agreement,
+  kappa = kappa$weighted.kappa,
+  lower = kappa$confid["weighted kappa", "lower"],
+  upper = kappa$confid["weighted kappa", "upper"]
+))
+}
+
+# Apply the function to each category
+kappa_by_category <- data1 |> 
+  group_by(subgroup) |> 
+  group_modify(~ calculate_kappa_by_category(.x)) |> 
+  ungroup()
+
+# Print the results
+print(kappa_by_category)
+```
+
+KEYHOLE
+
+Total counts and percentage of keyhole == "yes"
+
+```{r}
+summary_total <- data2 %>% 
+  summarise(
+    upf_category = "Total",
+    n_cases = n(),
+    n_keyhole_yes = sum(keyhole == "yes", na.rm = T),
+    pct_keyhole_yes = round(100 * n_keyhole_yes / n_cases, 1),
+    n_keyhole_x = sum(keyhole == "x", na.rm = T),
+    pct_keyhole_x = round(100 * n_keyhole_x / n_cases, 1),
+    n_keyhole_no = sum(keyhole == "no", na.rm = T),
+    pct_keyhole_no = round(100 * n_keyhole_no / n_cases, 1)
+  )
+
+summary_total
+```
+
+Counts and percentage of keyhole == "yes" per upf_category
+
+value "x" in the keyhole column indicates that the food item can not be categorized according to these criteria.
+
+```{r}
+summary_by_category <- data2 %>% 
+  group_by(upf_category) %>% 
+  summarise(
+    n_cases = n(),
+    n_keyhole_yes = sum(keyhole == "yes", na.rm = T),
+    pct_keyhole_yes = round(100 * n_keyhole_yes / n_cases, 1),
+    n_keyhole_x = sum(keyhole == "x", na.rm = T),
+    pct_keyhole_x = round(100 * n_keyhole_x / n_cases, 1),
+    n_keyhole_no = sum(keyhole == "no", na.rm = T),
+    pct_keyhole_no = round(100 * n_keyhole_no / n_cases, 1)
+  )
+
+summary_by_category
+
+```
+
+Combine total and per-category summaries into one dataframe
+
+```{r}
+summary_final <- bind_rows(summary_total, summary_by_category)
+
+print(summary_final)
+```
+
+STACKED BARPLOT
+
+1)  Recreate dataset with both yes and no fractions
+
+```{r}
+plot_data <- data2 %>% 
+  mutate(upf_category = factor(
+    upf_category, 
+    levels = c("Total", "non-upf", "partly upf", "upf")
+  )) %>% 
+  #Add total category
+  bind_rows(data2 %>% mutate(upf_category = "Total")) %>% 
+  group_by(upf_category, keyhole) %>% 
+  summarise(n = n(), .groups = "drop") %>% 
+  group_by(upf_category) %>% 
+  mutate(perc = 100 * n / sum(n))
+
+```
+
+2)  Rename levels
+
+```{r}
+plot_data$upf_category <- factor(
+  plot_data$upf_category, 
+  levels = c("Total", "non-upf", "partly upf", "upf"),
+  labels = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF")
+)
+```
+
+Create a small data frame with categories and labels
+
+```{r}
+label_df <- data.frame(
+  upf_category = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF"),
+  perc_top = c(100, 100, 100, 100),
+  label = c("n = 2218", "n = 876", "n = 350", "n = 992")
+)
+```
+
+Create another data frame with labels for percentage points
+
+```{r}
+right_label_df <- data.frame(
+  upf_category = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF"),
+  perc_point = c(24.0, 45.9, 12.9, 8.6),
+  label = c("24.0%", "45.9%", "12.9%", "8.6%")
+)
+```
+
+Order the keyhole categories by defining factor levels
+
+```{r}
+plot_data$keyhole <- factor(plot_data$keyhole, levels = c("x", "no", "yes"))
+```
+
+3)  Create the stacked bar chart
+
+```{r}
+p1 <- ggplot(plot_data, aes(x = upf_category, y = perc, fill = keyhole)) +
+  geom_bar(stat = "identity", width = 0.35, color = "white") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))
+  ) +
+  
+  scale_fill_manual(
+    name = "GEF",
+    values = c("yes" = "#6B8E7F", "no" = "#9C6B6B", "x" = "snow4"),
+    labels = c("yes" = "Yes", "no" = "No", "x" = "Not classified")
+  ) +
+  labs(
+    x = "",
+    y = "Percentage (%)"
+  ) + 
+  
+  geom_text(
+    data = label_df,
+    aes(x = upf_category, y = perc_top, label = label),
+    inherit.aes = FALSE,
+    vjust = -0.6,
+    size = 4
+  ) +
+  
+  geom_text(
+    data = right_label_df,
+    aes(x = upf_category, y = perc_point, label = label),
+    inherit.aes = FALSE,
+    hjust = -0.7,
+    size = 3.5
+  ) +
+  
+  theme_minimal(base_size = 12)+
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.line = element_line(color = "black", linewidth = 0.1),
+    legend.position = "right",
+    legend.text = element_text(size = 10),
+    panel.grid= element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10)
+  )
+
+
+print(p1)
+```
+
+Save as image
+
+```{r}
+ggsave(
+  filename = file.path(dir_output, "Stacked_barplot.png"),
+  plot = p1,
+  width = 16,
+  height = 12,
+  unit = "cm",
+  dpi = 300
+)
+
+```
+
+Investigate which are the five top overlapping food groups
+
+```{r}
+upf_gef <- data2 %>% 
+  filter(upf_category == "upf", 
+         keyhole == "yes")
+
+```
+
+```{r}
+top_foodgroups <- upf_gef %>% 
+  count(subgroup, sort = TRUE)
+
+```
+
+```{r}
+top5_foodgroups <- top_foodgroups %>% 
+  slice_head(n =5)
+
+top5_foodgroups
+```
+
+Export outputs to Excel
+
+```{r}
+write_xlsx(
+  list(
+    food_items = summary_final,
+    Kappa = kappa_by_category
+  ),
+  path = file.path(dir_output, "Classification_kappa.xlsx")
+)
+```
