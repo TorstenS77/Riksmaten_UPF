@@ -6,7 +6,6 @@ editor: visual
 
 This script runs quantile regression at the median on nutrient intake variables with E% from UPF (scaled by division of 10) as predictor. Adolescents dataset.
 
-
 ```{r}
 #| label: setup
 #| include: false
@@ -34,7 +33,7 @@ library(quantreg)
 Import data (choose dataset)
 
 ```{r}
-master <- readRDS("Masterfile.rds") 
+master <- readRDS(file.path(dir_data,"Masterfile.rds"))
 
 ```
 
@@ -197,37 +196,134 @@ results$padj <- p.adjust(results$p_value, method = "BH")
 Function to customize rounding
 
 ```{r}
-round_by_var <- function(outcome, value) {
-  if(outcome %in% c("kcal", "folate_dens","ca_dens","k_dens")) {
-    return(round(value, 0))
-  }else if(outcome == "ED_nobev") {
+round_by_var <- function(outcome, value, stat = c("beta", "q5_vs_q1", "ci")) {
+  stat <-  match.arg(stat)
+  
+  if(stat == "ci") {
     return(round(value, 2))
-  }else{
-    return(round(value,1))
+  }
+  
+  if(outcome %in% c("kcal", "folate_dens", "ca_dens", "k_dens")) {
+    return(round(value, 0))
+  } else if (outcome == "ED_nobev"){
+    return(round(value, 2))
+  } else {
+    return(round(value, 1))
   }
 }
+
 ```
 
 Apply function
 
 ```{r}
-results_clean <- results
-results_clean$beta <- mapply(round_by_var, results_clean$outcome, results_clean$beta)
-results_clean$ci_lower <- mapply(round_by_var, results_clean$outcome, results_clean$ci_lower)
-results_clean$ci_upper <- mapply(round_by_var, results_clean$outcome, results_clean$ci_upper)
+results_clean <- results %>% 
+  rowwise() %>% 
+  mutate(
+    beta = round_by_var(outcome, beta, "beta"),
+    ci_lower = round_by_var(outcome, ci_lower, "ci"),
+    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+  ) %>% 
+  ungroup()
+```
 
-#FOrmat CI column
+Format
+
+```{r}
 results_clean$CI <- paste0("(", results_clean$ci_lower, ", ", results_clean$ci_upper, ")")
 
 results_clean <- results_clean[, c("outcome", "beta", "CI", "padj")]
 colnames(results_clean)[4] <- "p_adj"
+
+results_clean
 ```
+Test of linearity: Spline vs linear QR
+
+Set knots
 
 ```{r}
-print(results_clean)
+library(splines)
+
+#Chose variable by indexing
+yname <- dep_vars[5]
+xname <- "EP_upf_mid_10"
+
+vars_needed <- c(yname, xname, covars)
+dat <- ungdom[, vars_needed]
+dat <- dat[complete.cases(dat), ]
+
 ```
 
-CONTRAST BETWEEN Q5 AND Q1
+Step 1 define y and x
+
+```{r}
+y <- dat[[yname]]
+x <- dat[[xname]]
+```
+
+Step 2 build covariate matrix
+
+```{r}
+Z <- model.matrix(~., data = dat[, covars, drop = FALSE])
+
+Z <- Z[, colnames(Z) != "(Intercept)", drop = FALSE]
+
+```
+
+Step 3 build linear vs spline design matrices
+
+```{r}
+X_lin <- cbind(Intercept = 1, x = x, Z)
+
+kn <- as.numeric(quantile(x, probs = c(0.10, 0.50, 0.90)))
+B <- ns(x, knots = kn)
+
+X_spl <- cbind(Intercept = 1, B, Z)
+
+```
+
+Step 4 - fit median quantile regression (matrix interface)
+
+```{r}
+fit_lin <- rq.fit(X_lin, y, tau = 0.5)
+fit_spl <- rq.fit(X_spl, y, tau = 0.5)
+```
+Step 5 - compare fitted conditional medians over x (visual check)
+
+```{r}
+yhat_lin <- as.vector(X_lin %*% fit_lin$coefficients)
+yhat_spl <- as.vector(X_spl %*% fit_spl$coefficients)
+
+ord <- order(x)
+plot(x[ord], yhat_lin[ord], type = "l", xlab = xname, ylab = paste("Predicted median", yname))
+lines(x[ord], yhat_spl[ord], type = "l")
+
+```
+
+Step 6 - Smooth grid
+
+```{r}
+xg <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 200)
+
+Zg <- matrix(colMeans(Z), nrow = length(xg), ncol = ncol(Z), byrow = T)
+
+Xg_lin <- cbind(Intercept = 1, x = xg, Zg)
+
+Bg <- ns(xg, knots = kn)
+Xg_spl <-  cbind(Intercept = 1, Bg, Zg)
+
+yhat_lin_g <- as.vector(Xg_lin %*% fit_lin$coefficients)
+yhat_spl_g <- as.vector(Xg_spl %*% fit_spl$coefficients)
+
+plot(xg, yhat_lin_g, type = "l", lwd = 2,
+     xlab = xname, ylab = paste("Predicted median", yname))
+lines(xg, yhat_spl_g, lwd = 2)
+legend("topright", legend = c("Linear", "Spline"), lty = 1, bty = "n")
+
+```
+
+
+CONTRAST BETWEEN Q5 AND Q1 (MODEL-BASED)
 
 ```{r}
 qreg_contrast <- function(data, outcome, quintile_var, covars, 
@@ -289,23 +385,29 @@ print(results_contrast)
 
 ```
 
-Apply function for rounding
+Apply rounding function
 
 ```{r}
-results_contrast_clean <- results_contrast
-results_contrast_clean$q5_vs_q1 <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$q5_vs_q1)
-results_contrast_clean$ci_lower <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$ci_lower)
-results_contrast_clean$ci_upper <- mapply(round_by_var, results_contrast_clean$outcome, results_contrast_clean$ci_upper)
+results_contrast_clean <- results_contrast %>% 
+  rowwise() %>% 
+  mutate(
+    q5_vs_q1 = round_by_var(outcome, q5_vs_q1, "q5_vs_q1"),
+    ci_lower = round_by_var(outcome, ci_lower, "ci"),
+    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+  ) %>% 
+  ungroup()
 
-#FOrmat CI column
+results_contrast_clean
+```
+
+Format
+
+```{r}
 results_contrast_clean$CI <- paste0("(", results_contrast_clean$ci_lower, ", ", results_contrast_clean$ci_upper, ")")
 
 results_contrast_clean <- results_contrast_clean[, c("outcome", "q5_vs_q1", "CI")]
 
-```
-
-```{r}
-print(results_contrast_clean)
+results_contrast_clean
 ```
 
 2.  LOWER BOUND
@@ -343,23 +445,28 @@ Adjust for multiple testing
 results_low$padj <- p.adjust(results_low$p_value, method = "BH")
 ```
 
-Apply function for rounding
+Apply rounding function
 
 ```{r}
-results_clean_low <- results_low
-results_clean_low$beta <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$beta)
-results_clean_low$ci_lower <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$ci_lower)
-results_clean_low$ci_upper <- mapply(round_by_var, results_clean_low$outcome, results_clean_low$ci_upper)
+results_clean_low <- results_low %>% 
+  rowwise() %>% 
+  mutate(
+    beta = round_by_var(outcome, beta, "beta"),
+    ci_lower = round_by_var(outcome, ci_lower, "ci"),
+    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+  ) %>% 
+  ungroup()
+```
 
-#FOrmat CI column
+Format
+
+```{r}
 results_clean_low$CI <- paste0("(", results_clean_low$ci_lower, ", ", results_clean_low$ci_upper, ")")
 
 results_clean_low <- results_clean_low[, c("outcome", "beta", "CI", "padj")]
 colnames(results_clean_low)[4] <- "p_adj"
-```
 
-```{r}
-print(results_clean_low)
+results_clean_low
 ```
 
 Contrast
@@ -384,23 +491,29 @@ results_contrast_low <- do.call(
 print(results_contrast_low)
 ```
 
-Apply function for rounding
+Apply rounding function
 
 ```{r}
-results_contrast_clean_low <- results_contrast_low
-results_contrast_clean_low$q5_vs_q1 <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$q5_vs_q1)
-results_contrast_clean_low$ci_lower <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$ci_lower)
-results_contrast_clean_low$ci_upper <- mapply(round_by_var, results_contrast_clean_low$outcome, results_contrast_clean_low$ci_upper)
+results_contrast_clean_low <- results_contrast_low %>% 
+  rowwise() %>% 
+  mutate(
+    q5_vs_q1 = round_by_var(outcome, q5_vs_q1, "q5_vs_q1"),
+    ci_lower = round_by_var(outcome, ci_lower, "ci"),
+    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+  ) %>% 
+  ungroup()
 
-#FOrmat CI column
+results_contrast_clean_low
+```
+
+Format
+
+```{r}
 results_contrast_clean_low$CI <- paste0("(", results_contrast_clean_low$ci_lower, ", ", results_contrast_clean_low$ci_upper, ")")
 
 results_contrast_clean_low <- results_contrast_clean_low[, c("outcome", "q5_vs_q1", "CI")]
 
-```
-
-```{r}
-print(results_contrast_clean_low)
+results_contrast_clean_low
 ```
 
 Export to excel

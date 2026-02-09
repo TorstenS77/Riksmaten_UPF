@@ -35,15 +35,18 @@ library(forcats)
 Import data
 
 ```{r}
-master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+master <- readRDS(file.path(dir_data,"Masterfile.rds")) 
+
+sens <- readRDS(file.path(dir_data, "Sensitivity.rds"))
+
 ```
 
 Include only children from the 4 years old age group
 
 ```{r}
 barn <- master %>% 
-  filter(age_grp == "4_ar") %>% 
-  dplyr::select(person_ID, bmi_z, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, sex, age, edu_combined, screentime_combined, nrf, kcal, ED_nobev)
+  filter(age_grp == "4_ar" & misrep == "no") %>% 
+  dplyr::select(person_ID, bmi_z, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, sex, age, edu_combined, screentime_combined, nrf, kcal, ED_nobev, misrep)
 
 ```
 
@@ -118,18 +121,6 @@ overweight_check = factor(overweight_check, levels = levels(overweight))
 #compare
 barn4 %>% count(overweight, overweight_check)
 ```
-
-Fit model for standard diagnostic tests
-
-```{r}
-library(car)
-fit <- lm(bmi_z ~EP_upf_mid_10 + sex + screentime_combined + edu_combined + kcal + nrf, data = barn4)
-
-fit
-plot(fit)
-vif(fit)
-```
-
 
 MULTIPLE IMPUTATION
 
@@ -303,7 +294,7 @@ write.xlsx(
     Model2 = model2_pooled_sum_mid,
     Model3 = model3_pooled_sum_mid
   ),
-  file = file.path(dir_output, "Regression_BMI_barn4_mid.xlsx"),
+  file = file.path(dir_output, "Regression_BMI_barn4_mid_sens.xlsx"),
   overwrite = TRUE
 )
 ```
@@ -392,7 +383,7 @@ write.xlsx(
     Model2 = model2_pooled_sum_low,
     Model3 = model3_pooled_sum_low
   ),
-  file = file.path(dir_output, "Regression_BMI_barn4_low.xlsx"),
+  file = file.path(dir_output, "Regression_BMI_barn4_low_sens.xlsx"),
   overwrite = TRUE
 )
 ```
@@ -481,7 +472,7 @@ write.xlsx(
     Model2 = model2_pooled_sum_up,
     Model3 = model3_pooled_sum_up
   ),
-  file = file.path(dir_output,"Regression_BMI_barn4_up.xlsx"),
+  file = file.path(dir_output,"Regression_BMI_barn4_up_sens.xlsx"),
   overwrite = TRUE
 )
 ```
@@ -606,7 +597,7 @@ tables_list_mid <- list(
 
 write.xlsx(
   tables_list_mid,
-  file = file.path(dir_output,"OR_tertiles_barn4_mid.xlsx"),
+  file = file.path(dir_output,"OR_tertiles_barn4_mid_sens.xlsx"),
   overwrite = TRUE
 )
 
@@ -1095,7 +1086,7 @@ sheets <- list(
 )
 
 write.xlsx(sheets, 
-           file = file.path(dir_output, "PR_summaries_barn4.xlsx"), 
+           file = file.path(dir_output, "PR_summaries_barn4_sens.xlsx"), 
            overwrite = TRUE)
 ```
 

@@ -32,20 +32,38 @@ library(purrr)
 library(forcats)
 ```
 
-Import data (choose dataset)
+Import data
 
 ```{r}
-master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+master <- readRDS(file.path(dir_data,"Masterfile.rds")) 
 
+sens <- readRDS(file.path(dir_data, "Sensitivity.rds"))
+
+```
+
+Join misrep column
+
+```{r}
+master <- master %>% 
+  left_join(
+    sens %>% select(person_ID, misrep),
+    by = "person_ID"
+  )
 ```
 
 Create dataset for regression
 
 ```{r}
 vux1 <- master %>% 
-  filter(RM == "Vuxna") %>% 
-  dplyr::select(person_ID, sex, age, edu_combined, leisure, nrf, smoke, kcal, ED_nobev, bmi, overweight, EP_upf_low, EP_upf_up, EP_upf_mid)
+  filter(RM == "Vuxna" & misrep == "no") %>% 
+  dplyr::select(person_ID, sex, age, edu_combined, leisure, nrf, smoke, kcal, ED_nobev, bmi, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, misrep)
 
+```
+
+Check
+
+```{r}
+table(vux1$misrep, useNA = "ifany")
 ```
 
 Convert selected variables to factors, log-transform bmi-variable
@@ -131,14 +149,12 @@ divergent_cases[, c("person_ID", "bmi", "overweight")]
 
 ```
 
-Fit model for standard diagnostic tests
+Check vif
 
 ```{r}
 library(car)
-fit <- lm(logBMI ~EP_upf_mid_10 + age + sex + leisure + edu_combined + smoke + kcal + nrf, data = vux)
-
+fit <- lm(logBMI ~EP_upf_mid_10 + age + sex + edu_combined + kcal + nrf, data = vux)
 fit
-plot(fit)
 vif(fit)
 ```
 
@@ -407,7 +423,7 @@ write.xlsx(
     Model2 = final_table_model2,
     Model3 = final_table_model3
   ),
-  file = file.path(dir_output,"Regression_BMI_vux_mid.xlsx"),
+  file = file.path(dir_output,"Regression_BMI_vux_mid_sens.xlsx"),
   overwrite = TRUE
 )
 ```
@@ -602,7 +618,7 @@ write.xlsx(
     Model2 = final_table_model2,
     Model3 = final_table_model3
   ),
-  file = file.path(dir_output, "Regression_BMI_vux_low.xlsx"),
+  file = file.path(dir_output, "Regression_BMI_vux_low_sens.xlsx"),
   overwrite = TRUE
 )
 ```
@@ -797,7 +813,7 @@ write.xlsx(
     Model2 = final_table_model2,
     Model3 = final_table_model3
   ),
-  file = file.path(dir_output,"Regression_BMI_vux_up.xlsx"),
+  file = file.path(dir_output,"Regression_BMI_vux_up_sens.xlsx"),
   overwrite = TRUE
 )
 
@@ -1286,7 +1302,7 @@ sheets <- list(
 )
 
 write.xlsx(sheets, 
-           file = file.path(dir_output, "PR_summaries_vux.xlsx"), 
+           file = file.path(dir_output, "PR_summaries_vux_sens.xlsx"), 
            overwrite = TRUE
           )
 ```

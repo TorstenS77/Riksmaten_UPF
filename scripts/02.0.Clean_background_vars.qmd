@@ -278,7 +278,7 @@ ungdom_bmi <- ungdom_bg %>%
   mutate(bmi_z = sds(age = age,
                      sex = sex_temp,
                      item = "bmi",
-                     value = BMI,
+                     value = bmi,
                      ref = cole_lobstein.ref)) %>% 
   dplyr::select(person_ID, bmi_z)
 
@@ -296,7 +296,7 @@ ungdom_bg <- ungdom_bg %>%
 ungdom_bg <- ungdom_bg %>% 
   mutate(bmi_class = case_when(
     
-    age >= 2 & age <= 18 & is.na(bmi_z) ~NA_character_,
+    age >= 2 & age < 18 & is.na(bmi_z) ~NA_character_,
     
     age < 18 & sex == "M" & bmi_z >=2.288 ~"fetma",
     age < 18 & sex == "M" & bmi_z <2.288 & bmi_z >= 1.310 ~"övervikt",
@@ -464,7 +464,7 @@ barn_bmi <- barn_bg %>%
   mutate(bmi_z = sds(age = age_bmiz,
                      sex = sex_temp,
                      item = "bmi",
-                     value = BMI,
+                     value = bmi,
                      ref = cole_lobstein.ref)) %>% 
   dplyr::select(person_ID, bmi_z)
 

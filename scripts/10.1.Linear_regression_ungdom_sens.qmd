@@ -1,12 +1,12 @@
 ---
-title: "Linear regression of BMI-z and weight status among children 4 years old"
+title: "Linear regression of BMI-z and weight status among adolescents"
 format: html
 editor: visual
 ---
 
 1)  Multiple imputation
 2)  Linear regression with logBMI as dependent variable
-3)  Poisson regression with robust variance for Prevalence ratios of overweight/obesity Dataset: Young children
+3)  Poisson regression with robust variance for Prevalence ratios of overweight/obesity Dataset: Adolescents
 
 ```{r}
 #| label: setup
@@ -35,25 +35,38 @@ library(forcats)
 Import data
 
 ```{r}
-master <- readRDS(file.path(dir_data, "Masterfile.rds")) 
+master <- readRDS(file.path(dir_data,"Masterfile.rds")) 
+
+sens <- readRDS(file.path(dir_data, "Sensitivity.rds"))
+
 ```
 
-Include only children from the 4 years old age group
+Create dataset for regression
 
 ```{r}
-barn <- master %>% 
-  filter(age_grp == "4_ar") %>% 
-  dplyr::select(person_ID, bmi_z, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, sex, age, edu_combined, screentime_combined, nrf, kcal, ED_nobev)
+ungdom1 <- master %>% 
+  filter(RM == "Ungdom" & misrep == "no") %>% 
+  dplyr::select(person_ID, sex, age, age_grp, edu_combined, leisure, nrf, kcal, ED_nobev, bmi, bmi_z, overweight, EP_upf_low, EP_upf_up, EP_upf_mid, misrep)
 
+```
+
+Exclude individuals older than 18 years
+
+```{r}
+sum(ungdom1$age >=18, na.rm = T)
+
+ungdom <- ungdom1[ungdom1$age <18, ]
 ```
 
 Convert selected variables to factors
 
 ```{r}
-barn <- barn %>% 
+ungdom <- ungdom %>% 
   mutate(
     sex = as.factor(sex),
     edu_combined = as.factor(edu_combined),
+    leisure = as.factor(leisure),
+    age_grp = as.factor(age_grp),
     overweight = as.factor(overweight),
   )
 
@@ -62,7 +75,7 @@ barn <- barn %>%
 Divide the dataset in tertiles based on the variable EP_upf
 
 ```{r}
-barn <- barn %>% 
+ungdom <- ungdom %>% 
   mutate(
     tertile_low = factor(paste0("T", ntile(EP_upf_low, 3)), levels = paste0("T", 1:3)),
     tertile_mid = factor(paste0("T", ntile(EP_upf_mid, 3)), levels = paste0("T", 1:3)),
@@ -74,37 +87,30 @@ barn <- barn %>%
 Scale predictor variable
 
 ```{r}
-barn$EP_upf_low_10 <- barn$EP_upf_low / 10
-barn$EP_upf_mid_10 <- barn$EP_upf_mid / 10
-barn$EP_upf_up_10 <- barn$EP_upf_up / 10
+ungdom$EP_upf_low_10 <- ungdom$EP_upf_low / 10
+ungdom$EP_upf_mid_10 <- ungdom$EP_upf_mid / 10
+ungdom$EP_upf_up_10 <- ungdom$EP_upf_up / 10
 ```
 
 Count number of individuals with NA for bmi_z
 
 ```{r}
-barn4 <- barn[!is.na(barn$bmi_z), ]
-
+sum(is.na(ungdom$bmi_z))
 ```
 
-```{r}
-nrow(barn)
-nrow(barn4)
-
-sum(is.na(barn$bmi_z))
-```
-
-Values in the range -5 to +5 are deemed biologically plausible. Other values are removed.
+Exclude individuals with NA for the outcome before imputation
 
 ```{r}
-barn4 <- barn4[barn4$bmi_z >= -5 & barn4$bmi_z <=5, ]
+ungdom <- ungdom[!is.na(ungdom$bmi_z),]
 
-nrow(barn4)
+nrow(ungdom)
+
 ```
 
 Double check so that overweight category is correctly defined
 
 ```{r}
-barn4 <- barn4 %>% 
+ungdom <- ungdom %>% 
   mutate(
     overweight_check = case_when(
       is.na(bmi_z) ~NA_character_,
@@ -116,20 +122,16 @@ overweight_check = factor(overweight_check, levels = levels(overweight))
  )
 
 #compare
-barn4 %>% count(overweight, overweight_check)
+ungdom %>% count(overweight, overweight_check)
 ```
 
-Fit model for standard diagnostic tests
+Values for BMI-z score in the range -5 to +5 are deemed biologically plausible. Other values are removed.
 
 ```{r}
-library(car)
-fit <- lm(bmi_z ~EP_upf_mid_10 + sex + screentime_combined + edu_combined + kcal + nrf, data = barn4)
+ungdom <- ungdom[ungdom$bmi_z >= -5 & ungdom$bmi_z <=5, ]
 
-fit
-plot(fit)
-vif(fit)
+nrow(ungdom)
 ```
-
 
 MULTIPLE IMPUTATION
 
@@ -144,11 +146,10 @@ Prepare for imputation
 
 ```{r}
 
-imp_data <- as.data.frame(barn4)
+imp_data <- as.data.frame(ungdom)
 
 #Define variables to exclude from imputation
-exclude_vars <- c("bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
-
+exclude_vars <- c( "bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
 
 pred <- make.predictorMatrix(imp_data)
 
@@ -177,7 +178,7 @@ stopifnot(all(colnames(pred)== names(imp_data)))
 Run mice
 
 ```{r}
-barn4_imputed <- mice(
+ungdom_imputed <- mice(
   imp_data,
   m = 20,
   predictorMatrix = pred,
@@ -188,79 +189,63 @@ barn4_imputed <- mice(
 ```
 
 ```{r}
-summary(barn4_imputed)
+summary(ungdom_imputed)
 ```
 
 Inspect methods
 
 ```{r}
-barn4_imputed$method
+ungdom_imputed$method
 ```
 
 ```{r}
-colSums(barn4_imputed$where)
+colSums(ungdom_imputed$where)
 ```
+
+MIDDLE BOUND
 
 CRUDE MODEL
 
 ```{r}
 crude <- with(
-  barn4_imputed,
+  ungdom_imputed,
   lm(bmi_z ~EP_upf_mid_10)
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum_mid <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = T)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
 unique_n <- unique(n_per_imp)
 unique_n
-crude_pooled_sum_mid
+crude_pooled_sum
 ```
 
-MODEL 1
+MODEL 1 - sociodemographics only
 
 ```{r}
 model1 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age_grp + sex + edu_combined + leisure )
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum_mid <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = T)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
 unique_n <- unique(n_per_imp)
 unique_n
-model1_pooled_sum_mid
+model1_pooled_sum
 ```
 
-MODEL 2 - model 1 + kcal
+MODEL 2 - sociodemographics + energy intake
 
 ```{r}
 model2 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined + kcal)
-)
-
-model2_pooled <- pool(model2)
-model2_pooled_sum_mid <- summary(model2_pooled, conf.int = T)
-
-
-n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
-unique_n <- unique(n_per_imp)
-unique_n
-model2_pooled_sum_mid
-```
-
-MODEL 2 w/ interaction terms
-
-```{r}
-model2 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_mid_10 * screentime_combined + age + sex + edu_combined + screentime_combined + nrf)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age_grp + sex + edu_combined + leisure  + kcal)
 )
 
 model2_pooled <- pool(model2)
@@ -273,24 +258,22 @@ unique_n
 model2_pooled_sum
 ```
 
-No interaction effects discovered
-
-MODEL 3 - model 2 + nrf
+MODEL 3 - sodiodemographics + energy + nrf
 
 ```{r}
 model3 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_mid_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_mid_10 + age_grp + sex + edu_combined + leisure + kcal + nrf)
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum_mid <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum <- summary(model3_pooled, conf.int = T)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
 unique_n <- unique(n_per_imp)
 unique_n
-model3_pooled_sum_mid
+model3_pooled_sum
 ```
 
 Export to excel
@@ -298,13 +281,13 @@ Export to excel
 ```{r}
 write.xlsx(
   list(
-    Crude = crude_pooled_sum_mid,
-    Model1 = model1_pooled_sum_mid,
-    Model2 = model2_pooled_sum_mid,
-    Model3 = model3_pooled_sum_mid
+    Crude = crude_pooled_sum,
+    Model1 = model1_pooled_sum,
+    Model2 = model2_pooled_sum,
+    Model3 = model3_pooled_sum
   ),
-  file = file.path(dir_output, "Regression_BMI_barn4_mid.xlsx"),
-  overwrite = TRUE
+  file = file.path(dir_output, "Regression_BMI_ungdom_mid_sens.xlsx"),
+   overwrite = TRUE
 )
 ```
 
@@ -314,7 +297,7 @@ CRUDE MODEL
 
 ```{r}
 crude <- with(
-  barn4_imputed,
+  ungdom_imputed,
   lm(bmi_z ~EP_upf_low_10)
 )
 
@@ -328,12 +311,12 @@ unique_n
 crude_pooled_sum_low
 ```
 
-MODEL 1
+MODEL 1 - Sociodemographics only
 
 ```{r}
 model1 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age_grp + sex + edu_combined + leisure )
 )
 
 model1_pooled <- pool(model1)
@@ -346,12 +329,12 @@ unique_n
 model1_pooled_sum_low
 ```
 
-MODEL 2
+MODEL 2 - Sociodemographics + EI
 
 ```{r}
 model2 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined + kcal)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age_grp + sex + edu_combined + leisure  + kcal)
 )
 
 model2_pooled <- pool(model2)
@@ -368,8 +351,8 @@ MODEL 3
 
 ```{r}
 model3 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_low_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_low_10 + age_grp + sex + edu_combined + leisure  + kcal + nrf)
 )
 
 model3_pooled <- pool(model3)
@@ -392,8 +375,8 @@ write.xlsx(
     Model2 = model2_pooled_sum_low,
     Model3 = model3_pooled_sum_low
   ),
-  file = file.path(dir_output, "Regression_BMI_barn4_low.xlsx"),
-  overwrite = TRUE
+  file = file.path(dir_output, "Regression_BMI_ungdom_low_sens.xlsx"),
+   overwrite = TRUE
 )
 ```
 
@@ -403,7 +386,7 @@ CRUDE MODEL
 
 ```{r}
 crude <- with(
-  barn4_imputed,
+  ungdom_imputed,
   lm(bmi_z ~EP_upf_up_10)
 )
 
@@ -417,12 +400,12 @@ unique_n
 crude_pooled_sum_up
 ```
 
-MODEL 1
+MODEL 1 - Sociodemographics only
 
 ```{r}
 model1 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age_grp + sex + edu_combined + leisure )
 )
 
 model1_pooled <- pool(model1)
@@ -435,12 +418,12 @@ unique_n
 model1_pooled_sum_up
 ```
 
-MODEL 2
+MODEL 2 - Sociodemographics + EI
 
 ```{r}
 model2 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined + kcal)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age_grp + sex + edu_combined + leisure  + kcal)
 )
 
 model2_pooled <- pool(model2)
@@ -453,12 +436,12 @@ unique_n
 model2_pooled_sum_up
 ```
 
-MODEL 3
+MODEL 3 - Sociodemographics + kcal + nrf
 
 ```{r}
 model3 <- with(
-  barn4_imputed,
-  lm(bmi_z ~EP_upf_up_10 + age + sex + edu_combined + screentime_combined + kcal + nrf)
+  ungdom_imputed,
+  lm(bmi_z ~EP_upf_up_10 + age_grp + sex + edu_combined + leisure  + kcal + nrf)
 )
 
 model3_pooled <- pool(model3)
@@ -481,133 +464,8 @@ write.xlsx(
     Model2 = model2_pooled_sum_up,
     Model3 = model3_pooled_sum_up
   ),
-  file = file.path(dir_output,"Regression_BMI_barn4_up.xlsx"),
-  overwrite = TRUE
-)
-```
-
-LOGISTIC REGRESSION
-
-MIDDLE BOUND
-
-CRUDE MODEL
-
-```{r}
-logistic_crude <- with(barn4_imputed,
-                  glm(overweight ~tertile_mid, 
-                      family = binomial))
-
-log_pooled <- pool(logistic_crude)
-
-res <- summary(log_pooled, conf.int = T, exponentiate = F)
-
-#Convert to OR
-crude_or_table_mid <- res %>% 
-  mutate(
-    OR = exp(estimate),
-    conf.low = exp(conf.low),
-    conf.high = exp(conf.high)
-  ) %>% 
-  #Exclude intercept
-  filter(term !="(Intercept)") %>% 
-  dplyr::select(term, OR, conf.low, conf.high, p.value)
-
-crude_or_table_mid
-
-```
-
-MODEL 1
-
-```{r}
-logistic_model1 <- with(barn4_imputed,
-                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined, 
-                      family = binomial))
-
-log_pooled <- pool(logistic_model1)
-
-res <- summary(log_pooled, conf.int = T, exponentiate = F)
-
-#Convert to OR
-model1_or_table_mid <- res %>% 
-  mutate(
-    OR = exp(estimate),
-    conf.low = exp(conf.low),
-    conf.high = exp(conf.high)
-  ) %>% 
-  #Exclude intercept
-  filter(term !="(Intercept)") %>% 
-  dplyr::select(term, OR, conf.low, conf.high, p.value)
-
-model1_or_table_mid
-
-```
-
-MODEL 2
-
-```{r}
-logistic_model2 <- with(barn4_imputed,
-                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined + kcal, 
-                      family = binomial))
-
-log_pooled <- pool(logistic_model2)
-
-res <- summary(log_pooled, conf.int = T, exponentiate = F)
-
-#Convert to OR
-model2_or_table_mid <- res %>% 
-  mutate(
-    OR = exp(estimate),
-    conf.low = exp(conf.low),
-    conf.high = exp(conf.high)
-  ) %>% 
-  #Exclude intercept
-  filter(term !="(Intercept)") %>% 
-  dplyr::select(term, OR, conf.low, conf.high, p.value)
-
-model2_or_table_mid
-
-```
-
-MODEL 3
-
-```{r}
-logistic_model3 <- with(barn4_imputed,
-                  glm(overweight ~tertile_mid + age + sex + edu_combined + screentime_combined + kcal + nrf, 
-                      family = binomial))
-
-log_pooled <- pool(logistic_model3)
-
-res <- summary(log_pooled, conf.int = T, exponentiate = F)
-
-#Convert to OR
-model3_or_table_mid <- res %>% 
-  mutate(
-    OR = exp(estimate),
-    conf.low = exp(conf.low),
-    conf.high = exp(conf.high)
-  ) %>% 
-  #Exclude intercept
-  filter(term !="(Intercept)") %>% 
-  dplyr::select(term, OR, conf.low, conf.high, p.value)
-
-model3_or_table_mid
-
-```
-
-Export summaries to excel
-
-```{r}
-tables_list_mid <- list(
-  Crude = crude_or_table_mid,
-  Model1 = model1_or_table_mid,
-  Model2 = model2_or_table_mid,
-  Model3 = model3_or_table_mid
-)
-
-write.xlsx(
-  tables_list_mid,
-  file = file.path(dir_output,"OR_tertiles_barn4_mid.xlsx"),
-  overwrite = TRUE
+  file = file.path(dir_output, "Regression_BMI_ungdom_up_sens.xlsx"),
+   overwrite = TRUE
 )
 
 ```
@@ -628,9 +486,9 @@ define covars
 
 ```{r}
 covars0 <- character(0)
-covars1 <- c("age", "sex", "edu_combined", "screentime_combined")
-covars2 <- c("age", "sex", "edu_combined", "screentime_combined", "kcal")
-covars3 <- c("age", "sex", "edu_combined", "screentime_combined", "kcal", "nrf")
+covars1 <- c("age_grp", "sex", "edu_combined", "leisure")
+covars2 <- c("age_grp", "sex", "edu_combined", "leisure", "kcal")
+covars3 <- c("age_grp", "sex", "edu_combined", "leisure", "kcal", "nrf")
 ```
 
 MIDDLE-BOUND
@@ -645,7 +503,7 @@ covars <- covars0
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -740,7 +598,7 @@ covars <- covars1
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -803,7 +661,7 @@ covars <- covars2
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -866,7 +724,7 @@ covars <- covars3
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -929,7 +787,7 @@ covars <- covars1
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -992,7 +850,7 @@ covars <- covars1
 
 ```{r}
 models <- lapply(1:20, function(i) {
-  dat <- complete(barn4_imputed, i)
+  dat <- complete(ungdom_imputed, i)
   
   dat$overweight <- as.numeric(dat$overweight == "yes")
   
@@ -1050,7 +908,7 @@ Create a descriptive table with n and % of overweight per tertile
 1)  Subset to those non-missing overweight
 
 ```{r}
-dat <- subset(barn4, !is.na(overweight))
+dat <- subset(ungdom, !is.na(overweight))
 ```
 
 2)Create counts per tertile
@@ -1095,8 +953,9 @@ sheets <- list(
 )
 
 write.xlsx(sheets, 
-           file = file.path(dir_output, "PR_summaries_barn4.xlsx"), 
-           overwrite = TRUE)
+           file.path(dir_output, file = "PR_summaries_ungdom_sens.xlsx"), 
+           overwrite = TRUE
+          )
 ```
 
 Sensitivity analysis of Poisson regression on pre-imputed dataset
@@ -1110,7 +969,7 @@ covars <- covars3
 ```
 
 ```{r}
-dat <- barn4
+dat <- ungdom
 dat$overweight <- as.numeric(dat$overweight == "yes")
 
 dat$tertile_mid <-  factor(dat$tertile_mid, levels = c("T1", "T2", "T3"))

@@ -3,6 +3,7 @@ title: "Quantile regression with intake as pct of AR as dependent variable"
 format: html
 editor: visual
 ---
+
 This script runs quantile regression with intake of vitamins and mineras as % of average requirement (AR) as dependent variables. Adolescents dataset.
 
 ```{r}

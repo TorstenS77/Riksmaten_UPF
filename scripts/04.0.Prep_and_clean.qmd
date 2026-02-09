@@ -5,8 +5,7 @@ format: html
 editor: visual
 ---
 
-This script prepares the nutrient intake variables needed for subsequent analyses and combines intake data with background variables to one Masterfile. 
-It starts with the collapsed and combined dataset created in step 3.0 as well as the clean background datasets for each survey.
+This script prepares the nutrient intake variables needed for subsequent analyses and combines intake data with background variables to one Masterfile. It starts with the collapsed and combined dataset created in step 3.0 as well as the clean background datasets for each survey.
 
 Starting with the clean intake datasets created in step 02.1
 
@@ -24,7 +23,6 @@ dir.create(dir_output, showWarnings = F, recursive = T)
 ```
 
 analysis code starts here
-
 
 ```{r message=FALSE, warning=FALSE}
 
@@ -143,92 +141,164 @@ data <- data %>%
 
 ```
 
-Define AR-values for selected vitamins and minerals based on sex and age
+Create age bands + reference EI
 
 ```{r}
 data <- data %>%
   mutate(
-    vitE_AR = case_when(
-      age < 4 ~6,
-      age >= 4 & age < 11 ~7,
-      sex == "F" & age >= 11 & age < 15 ~8,
-      sex == "F" & age >= 15 & age < 18 ~9,
-      sex == "F" & age >= 18 ~8,
-      sex == "M" & age >= 11 & age < 15 ~9,
-      sex == "M" & age >= 15 & age < 18 ~10,
-      sex == "M" & age >= 18 ~9
+    age_band = case_when(
+      age >= 1  & age < 4  ~ "1-3",
+      age >= 4  & age < 7  ~ "4-6",
+      age >= 7  & age < 11 ~ "7-10",
+      age >= 11 & age < 15 ~ "11-14",
+      age >= 15 & age < 18 ~ "15-17",
+      age >= 18 & age < 25 ~ "18-24",
+      age >= 25 & age < 51 ~ "25-50",
+      age >= 51 & age < 71 ~ "51-70",
+      age >= 71            ~ ">70",
+      TRUE ~ NA_character_
     ),
-    vitD_AR = 7.5,
-    
-    folate_AR = case_when(
-      age < 4 ~90,
-      age >= 4 & age < 7 ~110,
-      age >= 7 & age < 11 ~160,
-      sex == "F" & age >= 11 & age < 15 ~220,
-      sex == "F" & age >= 15 & age < 18 ~240,
-      sex == "F" & age >= 18 ~250,
-      sex == "M" & age >= 11 & age < 15 ~200,
-      sex == "M" & age >= 15 ~250
-    ),
-    vitB12_AR = case_when(
-      age < 4 ~1.2,
-      age >= 4 & age < 7 ~1.4,
-      age >= 7 & age < 11 ~2.0,
-      sex == "F" & age >= 11 & age < 15 ~2.8,
-      sex == "F" & age >= 15 & age < 18 ~3.1,
-      sex == "M" & age >= 11 & age < 15 ~2.6,
-      age >= 15 ~3.2
-    ),
-    vitC_AR = case_when(
-      age < 4 ~20,
-      age >= 4 & age < 7 ~30,
-      age >= 7 & age < 11 ~45,
-      sex == "F" & age >= 11 & age < 15 ~60,
-      sex == "F" & age >= 15 ~75,
-      sex == "M" & age >= 11 & age < 15 ~65,
-      sex == "M" & age >= 15 & age < 18 ~85,
-      sex == "M" & age >= 18 ~90
-    ),
-    fe_AR = case_when(
-      age < 4 ~6,
-      age >= 4 & age < 7 ~5,
-      age >= 7 & age < 11 ~7,
-      sex == "F" & age >= 11 & age < 15 ~10,
-      sex == "F" & age >= 15 & age < 51 ~9,
-      sex == "F" & age >= 51 ~6,
-      sex == "M" & age >= 11 & age < 18 ~9,
-      sex == "M" & age >= 18 ~7
-    ),
-    ca_AR = case_when(
-      age < 4 ~400,
-      age >= 4 & age < 7 ~700,
-      age >= 7 & age < 18 ~980,
-      age >= 18 & age < 25 ~870,
-      age >= 25 ~750
-    ),
-     k_AR = case_when(
-      age < 4 ~700,
-      age >= 4 & age < 7 ~900,
-      age >= 7 & age < 11 ~1450,
-      sex == "F" & age >= 11 & age < 15 ~1900,
-      sex == "F" & age >= 15 & age < 18 ~2250,
-      sex == "F" & age >= 18 ~2800,
-      sex == "M" & age >= 11 & age < 15 ~2050,
-      sex == "M" & age >= 15 & age < 18 ~2700,
-      sex == "M" & age >= 18 ~2700
-    ),
-    se_AR = case_when(
-      age < 4 ~15,
-      age >= 4 & age < 7 ~20,
-      age >= 7 & age < 11 ~35,
-      sex == "F" & age >= 11 & age < 15 ~50,
-      sex == "F" & age >= 15 & age < 18 ~55,
-      sex == "F" & age >= 18 ~60,
-      sex == "M" & age >= 11 & age < 15 ~50,
-      sex == "M" & age >= 15 ~70
-    ),
+    EI_ref_kcal = case_when(
+      age_band == "1-3"  ~ 1099,
+      age_band == "4-6"  ~ 1506,
+      age_band == "7-10" ~ 1864,
+      age_band == "11-14" & sex=="F" ~ 2199,
+      age_band == "11-14" & sex=="M" ~ 2510,
+      age_band == "15-17" & sex=="F" ~ 2414,
+      age_band == "15-17" & sex=="M" ~ 3035,
+      age_band == "18-24" & sex=="F" ~ 2247,
+      age_band == "18-24" & sex=="M" ~ 2820,
+      age_band == "25-50" & sex=="F" ~ 2151,
+      age_band == "25-50" & sex=="M" ~ 2701,
+      age_band == "51-70" & sex=="F" ~ 1984,
+      age_band == "51-70" & sex=="M" ~ 2462,
+      age_band == ">70"   & sex=="F" ~ 1960,
+      age_band == ">70"   & sex=="M" ~ 2414,
+      TRUE ~ NA_real_
+    )
   )
 
+```
+
+Define AR-values for selected vitamins and minerals based on sex and age
+
+```{r}
+data <- data %>% 
+  mutate(
+    vitD_AR = 7.5, 
+    
+    vitC_AR = case_when(
+      age_band == "1-3" ~20,
+      age_band == "4-6" ~30,
+      age_band == "7-10" ~45,
+      age_band == "11-14" & sex == "F" ~60,
+      age_band == "11-14" & sex == "M" ~65,
+      age_band == "15-17" & sex == "F" ~75,
+      age_band == "15-17" & sex == "M" ~85,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~75,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~90,
+      TRUE ~NA_real_
+    ),
+
+folate_AR = case_when(
+      age_band == "1-3" ~90,
+      age_band == "4-6" ~110,
+      age_band == "7-10" ~160,
+      age_band == "11-14" & sex == "F" ~220,
+      age_band == "11-14" & sex == "M" ~200,
+      age_band == "15-17" & sex == "F" ~240,
+      age_band == "15-17" & sex == "M" ~250,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") ~250,
+      TRUE ~NA_real_
+    ),
+
+ca_AR = case_when(
+     age_band == "1-3" ~400,
+     age_band == "4-6" ~700,
+     age_band == "7-10" ~675,
+     age_band %in% c("11-14", "15-17")~980,
+     age_band %in% c("18-24", "25-50")~870,
+     age_band %in% c("51-70", ">70")  ~750,
+     TRUE ~NA_real_
+),
+
+fe_AR = case_when(
+   age_band == "1-3" ~6,
+      age_band == "4-6" ~5,
+      age_band == "7-10" ~7,
+      age_band == "11-14" & sex == "F" ~10,
+      age_band == "11-14" & sex == "M" ~9,
+      age_band == "15-17" ~9,
+      age_band %in% c("18-24", "25-50") & sex == "F" ~9,
+      age_band %in% c("18-24", "25-50") & sex == "M" ~7,
+      age_band %in% c("51-70", ">70") & sex == "F" ~6,
+      age_band %in% c("51-70", ">70") & sex == "M" ~7,
+      TRUE ~NA_real_
+    ),
+  vitE_AR = case_when(
+      age_band == "1-3" ~6,
+      age_band %in% c("4-6","7-10") ~7,
+      age_band == "11-14" & sex == "F" ~8,
+      age_band == "11-14" & sex == "M" ~9,
+      age_band == "15-17" & sex == "F" ~9,
+      age_band == "15-17" & sex == "M" ~10,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~8,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~9,
+      TRUE ~NA_real_
+    ),
+
+  vitB12_AR = case_when(
+      age_band == "1-3" ~1.2,
+      age_band == "4-6" ~1.4,
+      age_band == "7-10" ~2.0,
+      age_band == "11-14" & sex == "F" ~2.8,
+      age_band == "11-14" & sex == "M" ~2.6,
+      age_band == "15-17" & sex == "F" ~3.1,
+      age_band == "15-17" & sex == "M" ~3.2,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") ~3.2,
+      TRUE ~NA_real_
+    ),
+
+   k_AR = case_when(
+      age_band == "1-3" ~700,
+      age_band == "4-6" ~900,
+      age_band == "7-10" ~1450,
+      age_band == "11-14" & sex == "F" ~1900,
+      age_band == "11-14" & sex == "M" ~2050,
+      age_band == "15-17" & sex == "F" ~2250,
+      age_band == "15-17" & sex == "M" ~2700,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~2800,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~2800,
+      TRUE ~NA_real_
+    ),
+
+    se_AR = case_when(
+      age_band == "1-3" ~15,
+      age_band == "4-6" ~20,
+      age_band == "7-10" ~35,
+      age_band == "11-14" ~50,
+      age_band == "15-17" & sex == "F" ~55,
+      age_band == "15-17" & sex == "M" ~70,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~60,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~70,
+      TRUE ~NA_real_
+    ),
+)
+
+    
+  
+```
+
+```{r}
+data %>% summarise(across(ends_with("_AR"), ~sum(is.na(.x))))
+
+```
+```{r}
+problem_row <- data %>% 
+  filter(is.na(vitC_AR)) %>% 
+  select(person_ID, age, age_band, sex, vitC_AR, vitD_AR, folate_AR, ca_AR, fe_AR, se_AR)
+
+problem_row
 ```
 
 Calculate how large percent of AR each participant meets
@@ -249,19 +319,19 @@ data <- data %>%
 
 ```
 
-Define reference values based on sex and age
+NRF calculation on separate data. Starts with uncapped version.
 
 ```{r}
-data <- data %>%
+d1 <- data
+
+```
+
+Create RI/MRI denominators per day
+
+```{r}
+d2 <- d1 %>%
   mutate(
-     prot_drv = 0.10 * kcal / 4,
-    
-     fiber_drv = case_when(
-      age < 11 ~kcal / 1000 * 8.368,
-      age >= 11 & age < 18 ~kcal / 1000 * 10.46,
-      age >= 18 ~kcal / 1000 * 12.552,
-      TRUE ~ NA_real_
-    ),
+    # --- RI per DAY  ---
     vitA_drv = case_when(
       age < 4 ~300,
       age >= 4 & age < 7 ~350,
@@ -273,7 +343,7 @@ data <- data %>%
       sex == "M" & age >= 18 ~800,
       TRUE ~ NA_real_
     ),
-     vitC_drv = case_when(
+    vitC_drv = case_when(
       age < 4 ~25,
       age >= 4 & age < 7 ~35,
       age >= 7 & age < 11 ~55,
@@ -285,7 +355,7 @@ data <- data %>%
       sex == "M" & age >= 18 ~110,
       TRUE ~ NA_real_
     ),
-     vitD_drv = case_when(
+    vitD_drv = case_when(
       age < 70 ~10,
       age >= 70 ~20,
       TRUE ~ NA_real_
@@ -359,22 +429,6 @@ data <- data %>%
       TRUE ~ NA_real_
     ),
     
-     mg_drv = case_when(
-      age < 4 ~170,
-      age >= 4 & age < 7 ~230,
-      age >= 7 & age < 11 ~230,
-      sex == "F" & age >= 11 & age < 15 ~250,
-      sex == "M" & age >= 11 & age < 15 ~300,
-      sex == "F" & age >= 15 & age < 18 ~250,
-      sex == "M" & age >= 15 & age < 18 ~300,
-      sex == "F" & age >= 18 ~300,
-      sex == "M" & age >= 18 ~350,
-      TRUE ~ NA_real_
-    ),
-    SFA_drv = 0.1 * kcal / 9,
-    
-    sugar_added_drv = 0.1 * kcal / 4,
-    
     naCl_drv = case_when(
       age < 4 ~2.75,
       age >= 4 & age < 7 ~3.5,
@@ -383,86 +437,201 @@ data <- data %>%
       age >= 18 ~5.75,
       TRUE ~ NA_real_
     )
-)
+  )
+
+```
+
+Convert denominators to "per 100 kcal" (\*\_drv100)
+
+a)  Micronutrients + NaCl: RI / day -\> RI per 100 kcal using reference EI
+
+```{r}
+d3 <- d2 %>%
+  mutate(
+    vitA_drv100   = vitA_drv   / EI_ref_kcal * 100,
+    vitC_drv100   = vitC_drv   / EI_ref_kcal * 100,
+    vitD_drv100   = vitD_drv   / EI_ref_kcal * 100,
+    vitE_drv100   = vitE_drv   / EI_ref_kcal * 100,
+    folate_drv100 = folate_drv / EI_ref_kcal * 100,
+    fe_drv100     = fe_drv     / EI_ref_kcal * 100,
+    ca_drv100     = ca_drv     / EI_ref_kcal * 100,
+    k_drv100      = k_drv      / EI_ref_kcal * 100,
+    mg_drv100     = mg_drv     / EI_ref_kcal * 100,
+    naCl_drv100   = naCl_drv   / EI_ref_kcal * 100
+  )
+
+```
+
+b)  E% based nutrients: constants per 100 kcal (not using observed kcal)
+
+```{r}
+d3 <- d3 %>%
+  mutate(
+    prot_drv100        = 0.15 * 100 / 4,  # 3.75 g/100kcal
+    SFA_drv100         = 0.10 * 100 / 9,  # 1.111... g/100kcal
+    sugar_added_drv100 = 0.10 * 100 / 4   # 2.5 g/100kcal
+  )
+
+```
+
+c)  Fibre: g/MJ -\> g/100 kcal
+
+```{r}
+MJ_per_100kcal <- 100 / 239.006
+
+d3 <- d3 %>% 
+  mutate(
+    fiber_drv100 = case_when(
+      age < 11 ~2.0 * MJ_per_100kcal,
+      age >=11 & age < 18 ~2.5 * MJ_per_100kcal,
+      age >= 18 ~3.0 * MJ_per_100kcal,
+      TRUE ~NA_real_
+    )
+  )
+```
+
+Nutrient per 100 kcal
+
+```{r}
+d4 <- d3 %>%
+  mutate(
+    kcal_ok = !is.na(kcal) & kcal > 0,
+    prot_100kcal = if_else(kcal_ok, (protein / kcal) * 100, NA_real_),
+    fiber_100kcal = if_else(kcal_ok, (fiber / kcal) * 100, NA_real_),
+    vitA_100kcal = if_else(kcal_ok, (vitA / kcal) * 100, NA_real_),
+    vitC_100kcal = if_else(kcal_ok, (vitC / kcal) * 100, NA_real_),
+    vitD_100kcal = if_else(kcal_ok, (vitD / kcal) * 100, NA_real_),
+    vitE_100kcal = if_else(kcal_ok, (vitE / kcal) * 100, NA_real_),
+    folate_100kcal = if_else(kcal_ok, (folate / kcal) * 100, NA_real_),
+    fe_100kcal = if_else(kcal_ok, (fe / kcal) * 100, NA_real_),
+    ca_100kcal = if_else(kcal_ok, (ca / kcal) * 100, NA_real_),
+    k_100kcal = if_else(kcal_ok, (k / kcal) * 100, NA_real_),
+    mg_100kcal = if_else(kcal_ok, (mg / kcal) * 100, NA_real_),
+    SFA_100kcal = if_else(kcal_ok, (SFA / kcal) * 100, NA_real_),
+    sugar_added_100kcal = if_else(kcal_ok, (sugar_added / kcal) * 100, NA_real_),
+    naCl_100kcal = if_else(kcal_ok, (naCl / kcal) * 100, NA_real_)
+  )
+
+```
+
+Compute quotients
+
+```{r}
+d5 <- d4 %>%
+  mutate(
+    prot_quote = prot_100kcal / prot_drv100, 
+    fiber_quote = fiber_100kcal / fiber_drv100, 
+    vitA_quote = vitA_100kcal / vitA_drv100, 
+    vitC_quote = vitC_100kcal / vitC_drv100, 
+    vitD_quote = vitD_100kcal / vitD_drv100, 
+    vitE_quote = vitE_100kcal / vitE_drv100, 
+    folate_quote = folate_100kcal / folate_drv100, 
+    fe_quote = fe_100kcal / fe_drv100, 
+    ca_quote = ca_100kcal / ca_drv100, 
+    k_quote = k_100kcal / k_drv100, 
+    mg_quote = mg_100kcal / mg_drv100, 
+    SFA_quote = SFA_100kcal / SFA_drv100, 
+    sugar_added_quote = sugar_added_100kcal / sugar_added_drv100, 
+    naCl_quote = naCl_100kcal / naCl_drv100 
+  )
+
+```
+
+NRF sums
+
+```{r}
+qual_vars <- c("prot_quote","fiber_quote","vitA_quote","vitC_quote","vitD_quote",
+               "vitE_quote","folate_quote","fe_quote","ca_quote","k_quote","mg_quote")
+disq_vars <- c("SFA_quote","sugar_added_quote","naCl_quote")
+
+d6 <- d5 %>%
+  mutate(
+    nrf_positive = rowSums(across(all_of(qual_vars)), na.rm = TRUE),
+    nrf_negative = rowSums(across(all_of(disq_vars)), na.rm = TRUE),
+    nrf_uncapped = nrf_positive - nrf_negative
+  )
+
+```
+
+Calculate nrf capped at 100% of RI for all qualifying nutrients except for fiber
+
+```{r}
+#Define variables to cap
+qual_vars_to_cap <- setdiff(qual_vars, "fiber_quote")
+
+d6 <-d6 %>% 
+  mutate(
+    across(all_of(qual_vars_to_cap), ~pmin(.x, 1), .names = "{.col}_cap"),
     
-```
-
-Calculate nutrient content per 100 kcal
-
-```{r}
-data <- data %>%
-  mutate(
-    prot_100kcal = (protein / kcal) *100,
-    fiber_100kcal = (fiber / kcal) * 100,
-    vitA_100kcal = (vitA / kcal) * 100,
-    vitC_100kcal = (vitC / kcal) * 100,
-    vitD_100kcal = (vitD / kcal) * 100,
-    vitE_100kcal = (vitE / kcal) * 100,
-    folate_100kcal = (folate / kcal) * 100,
-    fe_100kcal = (fe / kcal) * 100,
-    ca_100kcal = (ca / kcal) * 100,
-    k_100kcal = (k / kcal) * 100,
-    mg_100kcal = (mg / kcal) * 100,
-    SFA_100kcal = (SFA / kcal) * 100,
-    sugar_added_100kcal = (sugar_added / kcal) * 100,
-    naCl_100kcal = (naCl / kcal) * 100
+    #keep fibre as-is (uncapped) by just reusing the original column
+    fiber_quote_cap = fiber_quote,
+    
+    #Compute capped NRF
+    nrf_capped = rowSums(across(all_of(paste0(qual_vars_to_cap, "_cap"))), na.rm = TRUE) +
+      fiber_quote_cap -
+      rowSums(across(all_of(disq_vars)), na.rm = TRUE)
   )
 
 ```
 
-Calculate quotients
+```{r}
+summary(d6$nrf_uncapped)
+summary(d6$nrf_capped)
+cor(d6$nrf_uncapped, d6$nrf_capped, use="complete.obs", method = "spearman")
+
+```
 
 ```{r}
-data <- data %>% 
-  mutate(
-  prot_quote = (prot_100kcal / prot_drv * 100),
-  fiber_quote = (fiber_100kcal / fiber_drv * 100),
-  vitA_quote = (vitA_100kcal / vitA_drv * 100),
-  vitC_quote = (vitC_100kcal / vitC_drv * 100),
-  vitD_quote = (vitD_100kcal / vitD_drv * 100),
-  vitE_quote = (vitE_100kcal / vitE_drv * 100),
-  folate_quote = (folate_100kcal / folate_drv * 100),
-  fe_quote = (fe_100kcal / fe_drv * 100),
-  ca_quote = (ca_100kcal / ca_drv * 100),
-  k_quote = (k_100kcal / k_drv * 100),
-  mg_quote = (mg_100kcal / mg_drv * 100),
-  SFA_quote = (SFA_100kcal / SFA_drv * 100),
-  sugar_added_quote = (sugar_added_100kcal / sugar_added_drv * 100),
-  naCl_quote = (naCl_100kcal / naCl_drv * 100)
+hist(
+  d6$nrf_uncapped,
+  breaks = 50
 )
-  
 ```
 
-Sum up quotients
+```{r}
+hist(
+  d6$nrf_capped,
+  breaks = 50
+)
+```
+
+```{r}
+boxplot(
+  d6$nrf_uncapped,
+  d6$nrf_capped,
+  horizontal = TRUE
+)
+```
+
+```{r}
+top10_nrf_capped <- d6 %>% 
+  select(person_ID, kcal, nrf_capped) %>% 
+  arrange(desc(nrf_capped)) %>% 
+  slice_head(n=20)
+
+top10_nrf_capped
+```
+
+```{r}
+cor(d6$nrf_capped, d6$kcal, use = "complete.obs")
+cor(d6$nrf_uncapped, d6$kcal, use = "complete.obs")
+```
+The capped version of NRF is chosen
+
+```{r}
+d6 <- d6 %>% 
+  rename(nrf = nrf_capped)
+```
+
+Join back nrf to original data
 
 ```{r}
 data <- data %>% 
-  mutate(
-  nrf_positive = rowSums(dplyr::select(., prot_quote:mg_quote), na.rm = T),
-  nrf_negative = rowSums(dplyr::select(., SFA_quote:naCl_quote), na.rm = T),
-  nrf = nrf_positive - nrf_negative
+  left_join(
+    d6 %>% select(person_ID, nrf),
+    by = "person_ID"
   )
-```
 
-Check
-
-```{r}
-summary(data$nrf)
-```
-
-Investigate extreme values
-
-```{r}
-top_10 <- data %>% 
-  arrange(desc(nrf)) %>% 
-  slice_head(n = 10)
-
-bottom_10 <- data %>% 
-  arrange(nrf) %>% 
-  slice_head(n = 10)
-
-top_10
-bottom_10
 ```
 
 Select variables to keep

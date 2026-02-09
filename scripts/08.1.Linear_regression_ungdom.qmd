@@ -3,10 +3,10 @@ title: "Linear regression of BMI-z and weight status among adolescents"
 format: html
 editor: visual
 ---
-1) Multiple imputation
-2) Linear regression with logBMI as dependent variable
-3) Poisson regression with robust variance for Prevalence ratios of overweight/obesity
-Dataset: Adolescents
+
+1)  Multiple imputation
+2)  Linear regression with logBMI as dependent variable
+3)  Poisson regression with robust variance for Prevalence ratios of overweight/obesity Dataset: Adolescents
 
 ```{r}
 #| label: setup
@@ -52,7 +52,7 @@ Exclude individuals older than 18 years
 ```{r}
 sum(ungdom1$age >=18, na.rm = T)
 
-ungdom <- ungdom1[ungdom1$age <=18, ]
+ungdom <- ungdom1[ungdom1$age <18, ]
 ```
 
 Convert selected variables to factors
@@ -129,6 +129,18 @@ ungdom <- ungdom[ungdom$bmi_z >= -5 & ungdom$bmi_z <=5, ]
 
 nrow(ungdom)
 ```
+
+Fit model for standard diagnostic tests
+
+```{r}
+library(car)
+fit <- lm(bmi_z ~EP_upf_mid_10 + age_grp + sex + leisure + edu_combined + kcal + nrf, data = ungdom)
+
+fit
+plot(fit)
+vif(fit)
+```
+
 
 MULTIPLE IMPUTATION
 

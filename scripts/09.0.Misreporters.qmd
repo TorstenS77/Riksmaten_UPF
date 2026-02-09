@@ -1,10 +1,8 @@
 ---
-title: "Suspected misreporters"
+title: "Prediction interval"
 format: html
 editor: visual
 ---
-This script calculates prediction interval to identify suspected misreporters
-
 
 ```{r}
 #| label: setup
@@ -21,7 +19,6 @@ dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 Analytic code starts here
 
-
 ```{r}
 library(dplyr)
 library(openxlsx)
@@ -29,7 +26,7 @@ library(openxlsx)
 ```
 
 ```{r}
-master3 <- readRDS(file.path("Masterfile.rds")) 
+master3 <- readRDS(file.path(dir_data,"Masterfile.rds")) 
 ```
 
 Check number of NA for height and weight
@@ -39,10 +36,10 @@ na_by_RM <- master3 %>%
   group_by(RM) %>% 
   summarise(
     n = n(),
-    height_NA = sum(is.na(height)),
+    height_cm_NA = sum(is.na(height_cm)),
     weight_NA = sum(is.na(weight)),
-    either_NA = sum(is.na(height) | is.na(weight)),
-    height_NA_pct = 100 * height_NA / n,
+    either_NA = sum(is.na(height_cm) | is.na(weight)),
+    height__cm_NA_pct = 100 * height_cm_NA / n,
     weight_NA_pct = 100 * weight_NA / n,
     either_NA_pct = 100 * either_NA / n,
     .gropus = "drop"
@@ -54,30 +51,43 @@ na_by_RM
 Exclude cases with NA for height or weight
 
 ```{r}
-master2 <- master3[!is.na(master3$height) | !is.na(master3$weight), ]
+master2 <- master3 %>% 
+  filter(!is.na(height_cm), !is.na(weight))
 ```
 
 Exclude individuals with age \>18 years from RM Adolescents
 
 ```{r}
 master1 <- master2 %>% 
-  filter(!(RM == "Ungdom" & age > 18))
+  filter(RM != "Ungdom" | is.na(age) | age <=18)
 
 ```
 
 Keep only individuals in Age_group 4 ys among Young Children
 
 ```{r}
-master1 <- master1[!(master1$RM == "Barn" & master1$age_grp == "18_manad"), ]
+master1 <- master1 %>% 
+  filter(!(RM == "Barn" & age_grp == "18_manad"))
+
 ```
 
 Exclude individuals with BMI or BMI-z score outside biological plausible range
 
 ```{r}
-master <- master1[!(
-  (master1$RM %in% c("Barn", "Ungdom") & (master1$bmi_z < -5 | master1$bmi_z > 5)) | (master1$RM == "Vuxna" & (master1$bmi < 12 | master1$bmi > 60))
-), ]
+master <- subset(
+  master1,
+  !(
+    (RM %in% c("Barn", "Ungdom") & !is.na(bmi_z) & (bmi_z < -5 | bmi_z > 5)) |
+    (RM == "Vuxna" & !is.na(bmi) & (bmi <12 | bmi > 60))
+  )
+)
+```
 
+```{r}
+sum(is.na(master3$person_ID))
+sum(is.na(master2$person_ID))
+sum(is.na(master1$person_ID))
+sum(is.na(master$person_ID))
 ```
 
 Create new variables
@@ -85,8 +95,12 @@ Create new variables
 ```{r}
 
 #sex code
-master$sex_code <- ifelse(master$sex == "M", -1,
-                          ifelse(master$sex == "F", 1, NA))
+master <- master %>% 
+  mutate(sex_code = case_when(
+    sex == "M" ~ -1,
+    sex == "F" ~ 1,
+    TRUE ~NA_real_  
+  ))
 
 #MJ per day
 master$MJ_perday <- master$kcal * 0.004184
@@ -193,25 +207,42 @@ master$PI_low_kcal <- master$PI_low * 239.006
 master$PI_high_kcal <- master$PI_high * 239.006
 ```
 
+```{r}
+sum(is.na(master$person_ID))
+```
+
+Create a binary variable
+
+```{r}
+master_final <- master %>% 
+  mutate(
+    misrep = case_when(
+      kcal >PI_low_kcal & kcal <PI_high_kcal ~"no",
+      kcal <=PI_low_kcal | kcal >=PI_high_kcal ~"yes",
+      TRUE ~NA_character_
+    )
+  )
+```
+
+```{r}
+sum(is.na(master_final$person_ID))
+```
+
 Select variables of interest for sensitivity analysis
 
 ```{r}
 
-vars_of_interest <- c("person_ID", "RM", "sex", "age", "age_grp", "kcal", "MJ_perday", "ED_nobev", "bmi", "bmi_class", "leisure", "edu_combined", "overweight", "smoke", "bmi_z", "screentime_combined", "EP_upf_mid", "EP_upf_low", "EP_upf_up", "PI_low", "PI_high", "TEE_MJ", "TEE_kcal")
+vars_of_interest <- c("person_ID", "RM", "sex", "age", "age_grp", "kcal", "ED_nobev", "bmi", "bmi_class", "leisure", "edu_combined", "overweight", "smoke", "bmi_z", "screentime_combined", "EP_upf_mid", "EP_upf_low", "EP_upf_up", "misrep")
   
 ```
 
 ```{r}
-sensitivity <- master %>% 
+sensitivity <- master_final %>% 
   dplyr::select(all_of(vars_of_interest))
 ```
 
 Write to excel
 
 ```{r}
-saveRDS(
-  sensitivity, 
-  file = file.path(dir_output, "Sensitivity.rds")
-)
-
+saveRDS(sensitivity, file.path(dir_output, "Sensitivity.rds"))
 ```

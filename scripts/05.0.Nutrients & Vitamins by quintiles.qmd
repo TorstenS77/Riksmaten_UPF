@@ -5,7 +5,7 @@ format: html
 editor: visual
 ---
 
-This script divides the dataset into quintiles, computes density of energy, nutrients and vitamins and minerals within each quintile. 
+This script divides the dataset into quintiles, computes density of energy, nutrients and vitamins and minerals within each quintile.
 
 It starts with the Masterfile created in step 4.0
 
@@ -23,7 +23,6 @@ dir.create(dir_output, showWarnings = F, recursive = T)
 ```
 
 analysis code starts here
-
 
 ```{r message=FALSE, warning=FALSE}
 
@@ -52,14 +51,12 @@ vars_to_median <- c("EP_upf_mid", "kcal", "ED_nobev", "EP_prot",  "fiber_dens", 
 
 ```
 
-
 MIDDLE BOUND SCENARIO
 
 ```{r}
 ep <- "EP_upf_mid"
 outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep, ".xlsx"))
 ```
-
 
 Block 1. Basic input checks
 
@@ -412,7 +409,7 @@ saveWorkbook(wb, outfile, overwrite = T)
 
 ```
 
-UPPER BOUND SCENARIO 
+UPPER BOUND SCENARIO
 
 Define inputs
 
@@ -426,7 +423,6 @@ Create new Excel workbook
 ```{r}
 wb <- createWorkbook()
 ```
-
 
 RM = Vuxna
 
