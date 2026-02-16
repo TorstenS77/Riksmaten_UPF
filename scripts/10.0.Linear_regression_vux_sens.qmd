@@ -4,6 +4,8 @@ format: html
 editor: visual
 ---
 
+Sensitivity analysis excluding suspected misreporters
+
 1)  Multiple imputation
 2)  Linear regression with logBMI as dependent variable
 3)  Poisson regression with robust variance for Prevalence ratios of overweight/obesity Dataset: Adults

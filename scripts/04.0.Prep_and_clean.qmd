@@ -293,6 +293,7 @@ fe_AR = case_when(
 data %>% summarise(across(ends_with("_AR"), ~sum(is.na(.x))))
 
 ```
+
 ```{r}
 problem_row <- data %>% 
   filter(is.na(vitC_AR)) %>% 
@@ -616,6 +617,7 @@ top10_nrf_capped
 cor(d6$nrf_capped, d6$kcal, use = "complete.obs")
 cor(d6$nrf_uncapped, d6$kcal, use = "complete.obs")
 ```
+
 The capped version of NRF is chosen
 
 ```{r}

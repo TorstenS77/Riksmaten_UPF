@@ -81,6 +81,7 @@ Scale predictor variable
 ```{r}
 vux$EP_upf_low_10 <- vux$EP_upf_low / 10
 vux$EP_upf_mid_10 <- vux$EP_upf_mid / 10
+vux$EP_upf_up_10 <- vux$EP_upf_up / 10
 ```
 
 Define covariates
@@ -222,7 +223,7 @@ results_clean <- results %>%
   mutate(
     beta = round_by_var(outcome, beta, "beta"),
     ci_lower = round_by_var(outcome, ci_lower, "ci"),
-    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+    ci_upper = round_by_var(outcome, ci_upper, "ci")
   ) %>% 
   ungroup()
 ```
@@ -289,6 +290,7 @@ Step 4 - fit median quantile regression (matrix interface)
 fit_lin <- rq.fit(X_lin, y, tau = 0.5)
 fit_spl <- rq.fit(X_spl, y, tau = 0.5)
 ```
+
 Step 5 - compare fitted conditional medians over x (visual check)
 
 ```{r}
@@ -323,92 +325,6 @@ legend("topright", legend = c("Linear", "Spline"), lty = 1, bty = "n")
 
 ```
 
-
-CONTRAST BETWEEN Q5 AND Q1 (MODEL-BASED)
-
-```{r}
-
-qreg_contrast <- function(data, outcome, quintile_var, covars, 
-                      tau = 0.5,
-                      R = 2000, 
-                      seed = 123) {
-  
-  #make Q1 the reference
-  data[[quintile_var]] <- factor(data[[quintile_var]], levels = 1:5)
-  data[[quintile_var]] <- stats::relevel(data[[quintile_var]], ref = "1")
-  
-  form <- as.formula(
-    paste0(outcome, "~", quintile_var, "+", paste(covars, collapse = "+"))
-  )
-  
-  fit <- rq(form, tau = tau, data = data)
-  
-  set.seed(seed)
-  sm <- summary(fit, se = "boot", R = R)
-  
-  #Extract rows
-  coef_name <- paste0(quintile_var, "5")
-  row <- sm$coefficients[coef_name, ]
-
-  beta <- row["Value"]
-  se <- row["Std. Error"]
-  ci <- c(beta -1.96 * se, beta + 1.96 * se)
-  
-  #Return as a one-row data frame
-  data.frame(
-    outcome = outcome,
-    q5_vs_q1 = beta,
-    ci_lower = ci[1],
-    ci_upper = ci[2],
-    stringsAsFactors = F
-  )
-}
-```
-
-Apply function to all outcomes
-
-```{r}
-results_contrast <- do.call(
-  rbind,
-  lapply(dep_vars, qreg_contrast,
-         data = vux,
-         quintile_var = "quintile_mid",
-         covars = covars,
-         tau = 0.5,
-         R = 2000,
-         seed = 123)
-)
-
-```
-
-```{r}
-print(results_contrast)
-```
-
-Apply rounding function
-
-```{r}
-results_contrast_clean <- results_contrast %>% 
-  rowwise() %>% 
-  mutate(
-    q5_vs_q1 = round_by_var(outcome, q5_vs_q1, "q5_vs_q1"),
-    ci_lower = round_by_var(outcome, ci_lower, "ci"),
-    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
-  ) %>% 
-  ungroup()
-
-results_contrast_clean
-```
-
-Format
-
-```{r}
-results_contrast_clean$CI <- paste0("(", results_contrast_clean$ci_lower, ", ", results_contrast_clean$ci_upper, ")")
-
-results_contrast_clean <- results_contrast_clean[, c("outcome", "q5_vs_q1", "CI")]
-
-results_contrast_clean
-```
 
 2.  LOWER BOUND
 
@@ -453,7 +369,7 @@ results_clean_low <- results_low %>%
   mutate(
     beta = round_by_var(outcome, beta, "beta"),
     ci_lower = round_by_var(outcome, ci_lower, "ci"),
-    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+    ci_upper = round_by_var(outcome, ci_upper, "ci")
   ) %>% 
   ungroup()
 ```
@@ -469,52 +385,66 @@ colnames(results_clean_low)[4] <- "p_adj"
 results_clean_low
 ```
 
-Contrast
 
-Apply function to all outcomes
+3. UPPER BOUND
+
+Apply function for quantile regression to all outcomes
 
 ```{r}
-results_contrast_low <- do.call(
+results_up <- do.call(
   rbind,
-  lapply(dep_vars, qreg_contrast,
+  lapply(dep_vars, qreg_orig,
          data = vux,
-         quintile_var = "quintile_low",
+         predictor = "EP_upf_up_10",
          covars = covars,
          tau = 0.5,
          R = 2000,
          seed = 123)
 )
+```
 
+Check stability
+
+```{r}
+qreg_orig(vux, outcome="kcal", predictor = "EP_upf_up_10", covars = covars, seed=1)$beta
+
+qreg_orig(vux, outcome="kcal", predictor = "EP_upf_up_10", covars = covars, seed=2)$beta
 ```
 
 ```{r}
-print(results_contrast_low)
+print(results_up)
+```
+
+Adjust for multiple testing
+
+```{r}
+results_up$padj <- p.adjust(results_up$p_value, method = "BH")
 ```
 
 Apply rounding function
 
 ```{r}
-results_contrast_clean_low <- results_contrast_low %>% 
+results_clean_up <- results_up %>% 
   rowwise() %>% 
   mutate(
-    q5_vs_q1 = round_by_var(outcome, q5_vs_q1, "q5_vs_q1"),
+    beta = round_by_var(outcome, beta, "beta"),
     ci_lower = round_by_var(outcome, ci_lower, "ci"),
-    ci_upper = round_by_var(aoutcome, ci_upper, "ci")
+    ci_upper = round_by_var(outcome, ci_upper, "ci")
   ) %>% 
   ungroup()
-
-results_contrast_clean_low
 ```
 
 Format
 
 ```{r}
-results_contrast_clean_low$CI <- paste0("(", results_contrast_clean_low$ci_lower, ", ", results_contrast_clean_low$ci_upper, ")")
+results_clean_up$CI <- paste0("(", results_clean_up$ci_lower, ", ", results_clean_up$ci_upper, ")")
 
-results_contrast_clean_low <- results_contrast_clean_low[, c("outcome", "q5_vs_q1", "CI")]
+results_clean_up <- results_clean_up[, c("outcome", "beta", "CI", "padj")]
+colnames(results_clean_up)[4] <- "p_adj"
 
-results_contrast_clean_low
+results_clean_up
 ```
+
 
 Export to excel
 

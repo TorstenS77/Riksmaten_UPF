@@ -109,6 +109,13 @@ wide_summary <- summary_by_subgroup %>%
   )
 
 print(wide_summary)
+
+write.xlsx(
+  x = wide_summary,
+  file = file.path(dir_output, "Foodgroup_summary.xlsx")
+)
+
+
 ```
 
 What share of food items were classified according to alternative scenarios?
@@ -283,7 +290,7 @@ Create a small data frame with categories and labels
 label_df <- data.frame(
   upf_category = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF"),
   perc_top = c(100, 100, 100, 100),
-  label = c("n = 2218", "n = 876", "n = 350", "n = 992")
+  label = c("n = 2218", "n = 875", "n = 351", "n = 992")
 )
 ```
 
@@ -292,7 +299,7 @@ Create another data frame with labels for percentage points
 ```{r}
 right_label_df <- data.frame(
   upf_category = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF"),
-  perc_point = c(24.0, 45.9, 12.9, 8.6),
+  perc_point = c(24.0, 45.9, 12.8, 8.6),
   label = c("24.0%", "45.9%", "12.9%", "8.6%")
 )
 ```

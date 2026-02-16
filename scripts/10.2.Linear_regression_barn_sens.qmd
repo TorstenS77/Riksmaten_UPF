@@ -4,6 +4,8 @@ format: html
 editor: visual
 ---
 
+Sensitivity analysis exluding suspected misreporters
+
 1)  Multiple imputation
 2)  Linear regression with logBMI as dependent variable
 3)  Poisson regression with robust variance for Prevalence ratios of overweight/obesity Dataset: Young children
@@ -40,6 +42,17 @@ master <- readRDS(file.path(dir_data,"Masterfile.rds"))
 sens <- readRDS(file.path(dir_data, "Sensitivity.rds"))
 
 ```
+
+Join misrep column
+
+```{r}
+master <- master %>% 
+  left_join(
+    sens %>% select(person_ID, misrep),
+    by = "person_ID"
+  )
+```
+
 
 Include only children from the 4 years old age group
 
