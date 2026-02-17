@@ -1,6 +1,6 @@
 #Riksmaten_UPF
 
-This repository contains analytic scripts used to characterize the intake of Ultra-processed food in the Swedish national dietary surveys Riksmaten, stratified by adults (Vuxna), adolescents (Ungdom) and young children (Småbarn).
+This repository contains analytic scripts used to characterize the intake of Ultra-processed food in the Swedish national dietary surveys Riksmaten, stratified by adults ("vuxna"), adolescents ("ungdom") and young children ("småbarn").
 
 ##Repository structure
 
