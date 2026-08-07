@@ -28,7 +28,6 @@ library(patchwork)
 library(openxlsx)
 library(dplyr)
 library (tidyr)
-library(purrr)
 library(ggplot2)
 
 ```
@@ -303,10 +302,24 @@ ggsave(
 
 ```
 
+```{r}
+# Save the combined plot
+ggsave(
+  filename = file.path(dir_output, "Lineplots.pdf"), 
+  plot = lineplots, 
+  width = 16, 
+  height = 12,
+  dpi = 300
+)
+
+```
+
+
 Extract legend only
 
 ```{r}
 library(grid)
+library(gridExtra)
 
 p1 <- plot_list[[1]] + theme(legend.position = "bottom")
 g <- ggplotGrob(p1)
@@ -314,21 +327,40 @@ idx <- which(g$layout$name == "guide-box-bottom")
 
 leg <- g$grobs[[idx]]
 
-grid.newpage()
 grid.draw(leg)
 
+legend_grob <- arrangeGrob(leg)
 
 ```
 
 Save legend as image
 
 ```{r}
-png("Legend_only.png",
-    width = 3000, 
-    height = 600,
-    res = 300)
-grid::grid.newpage()
-grid::grid.draw(leg)
-dev.off()
-
+ggsave(
+  filename = file.path(dir_output, "Legend_only.png"),
+  plot = legend_grob,
+  width = 6,
+  height = 1.2,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
 ```
+
+
+```{r}
+ggsave(
+  filename = file.path(dir_output, "Legend_only.pdf"),
+  plot = legend_grob,
+  width = 6,
+  height = 1.2,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
+
+
+

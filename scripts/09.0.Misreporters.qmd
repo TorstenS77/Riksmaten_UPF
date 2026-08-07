@@ -245,4 +245,5 @@ Write to excel
 
 ```{r}
 saveRDS(sensitivity, file.path(dir_output, "Sensitivity.rds"))
+saveRDS(sensitivity, file.path(dir_data, "Sensitivity.rds"))
 ```

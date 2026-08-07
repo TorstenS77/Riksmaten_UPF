@@ -26,10 +26,8 @@ Analytic code starts here
 ```{r message=FALSE, warning=FALSE}
 library(openxlsx)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 library(forcats)
+library(car)
 ```
 
 Import data
@@ -50,7 +48,7 @@ ungdom1 <- master %>%
 Exclude individuals older than 18 years
 
 ```{r}
-sum(ungdom1$age >=18, na.rm = T)
+sum(ungdom1$age >=18, na.rm = TRUE)
 
 ungdom <- ungdom1[ungdom1$age <18, ]
 ```
@@ -139,8 +137,8 @@ fit <- lm(bmi_z ~EP_upf_mid_10 + age_grp + sex + leisure + edu_combined + kcal +
 fit
 plot(fit)
 vif(fit)
+hist(rstandard(fit), breaks = 30)
 ```
-
 
 MULTIPLE IMPUTATION
 
@@ -158,7 +156,7 @@ Prepare for imputation
 imp_data <- as.data.frame(ungdom)
 
 #Define variables to exclude from imputation
-exclude_vars <- c( "bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+exclude_vars <- c( "bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up", "EP_upf_low_10", "EP_upf_mid_10", "EP_upf_up_10")
 
 pred <- make.predictorMatrix(imp_data)
 
@@ -222,7 +220,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -240,7 +238,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -258,7 +256,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -276,7 +274,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
@@ -311,7 +309,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum_low <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum_low <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -329,7 +327,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum_low <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum_low <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -347,7 +345,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum_low <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum_low <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -365,7 +363,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum_low <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum_low <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
@@ -400,7 +398,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum_up <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum_up <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -418,7 +416,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum_up <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum_up <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -436,7 +434,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum_up <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum_up <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -454,7 +452,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum_up <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum_up <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
@@ -575,9 +573,9 @@ pool_pr_one_term <- function(robust, term) {
   
   data.frame(
     term = term,
-    PR <- exp(Qbar),
-    LCL <- exp(Qbar - 1.96 * se),
-    UCL <- exp(Qbar + 1.96 * se),
+    PR = exp(Qbar),
+    LCL = exp(Qbar - 1.96 * se),
+    UCL = exp(Qbar + 1.96 * se),
     logPR = Qbar,
     SE = se,
     z = z,

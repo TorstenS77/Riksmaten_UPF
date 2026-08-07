@@ -15,7 +15,7 @@ project_root <- normalizePath(file.path(getwd(), ".."))
 dir_data <- file.path(project_root, "data")
 dir_output <- file.path(project_root, "output")
 
-dir.create(dir_output, showWarnings = F, recursive = T)
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 ```
 
@@ -24,9 +24,6 @@ Analytic code starts here
 ```{r message=FALSE, warning=FALSE}
 library(openxlsx)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 library(quantreg)
 ```
 
@@ -155,7 +152,7 @@ qreg_orig <- function(data, outcome, predictor, covars,
     ci_lower = ci[1],
     ci_upper = ci[2],
     p_value = pval,
-    stringsAsFactors = F
+    stringsAsFactors = FALSE
   )
   
 }
@@ -197,7 +194,7 @@ results$padj <- p.adjust(results$p_value, method = "BH")
 Function to customize rounding
 
 ```{r}
-round_by_var <- function(outcome, value, stat = c("beta", "q5_vs_q1", "ci")) {
+round_by_var <- function(outcome, value, stat = c("beta", "ci")) {
   stat <-  match.arg(stat)
   
   if(stat == "ci") {
@@ -305,9 +302,9 @@ lines(x[ord], yhat_spl[ord], type = "l")
 Step 6 - Smooth grid
 
 ```{r}
-xg <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 200)
+xg <- seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE), length.out = 200)
 
-Zg <- matrix(colMeans(Z), nrow = length(xg), ncol = ncol(Z), byrow = T)
+Zg <- matrix(colMeans(Z), nrow = length(xg), ncol = ncol(Z), byrow = TRUE)
 
 Xg_lin <- cbind(Intercept = 1, x = xg, Zg)
 
@@ -323,7 +320,6 @@ lines(xg, yhat_spl_g, lwd = 2)
 legend("topright", legend = c("Linear", "Spline"), lty = 1, bty = "n")
 
 ```
-
 
 2.  LOWER BOUND
 
@@ -458,18 +454,15 @@ writeData(wb, sheet = "N zero counts", zero_counts_df)
 addWorksheet(wb, "Clean_mid")
 writeData(wb, sheet = "Clean_mid", results_clean)
 
-addWorksheet(wb, "Contrast_mid")
-writeData(wb, sheet = "Contrast_mid", results_contrast_clean)
-
 addWorksheet(wb, "Clean_low")
 writeData(wb, sheet = "Clean_low", results_clean_low)
 
-addWorksheet(wb, "Contrast_low")
-writeData(wb, sheet = "Contrast_low", results_contrast_clean_low)
+addWorksheet(wb, "Clean_up")
+writeData(wb, sheet = "Clean_up", results_clean_up)
 
 
 saveWorkbook(wb, 
              file = file.path(dir_output, "Quantreg_results_barn.xlsx"),
-             overwrite = T
+             overwrite = TRUE
             )
 ```

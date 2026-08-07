@@ -26,10 +26,8 @@ Analytic code starts here
 ```{r message=FALSE, warning=FALSE}
 library(openxlsx)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 library(forcats)
+library(car)
 ```
 
 Import data (choose dataset)
@@ -134,13 +132,66 @@ divergent_cases[, c("person_ID", "bmi", "overweight")]
 Fit model for standard diagnostic tests
 
 ```{r}
-library(car)
+
 fit <- lm(logBMI ~EP_upf_mid_10 + age + sex + leisure + edu_combined + smoke + kcal + nrf, data = vux)
 
 fit
+summary(fit)
 plot(fit)
 vif(fit)
+hist(rstandard(fit), breaks = 30)
 ```
+
+Investigate Cook's distance
+
+```{r}
+plot(cooks.distance(fit))
+```
+
+Investigate observations with Cook's distance \>4/n
+
+```{r}
+threshold <- 4 / nrow(vux)
+
+which(cooks.distance(fit) > threshold)
+
+idx <- which(cooks.distance(fit) > threshold)
+
+vux[idx, c("person_ID", "sex", "EP_upf_mid_10", "age", "sex", "leisure", "edu_combined", "smoke", "kcal", "nrf", "bmi")]
+```
+
+Check leverage
+
+```{r}
+plot(hatvalues(fit))
+```
+
+```{r}
+model_data <- model.frame(fit)
+threshold <- 4 / nrow(model_data)
+cook <- cooks.distance(fit)
+
+```
+
+Generate dataset without potentially influential observations for robustness check
+
+```{r}
+vux_robust <- model_data[-which(cook > threshold), ]
+```
+
+```{r}
+
+fit_robust <- lm(logBMI ~EP_upf_mid_10 + age + sex + leisure + edu_combined + smoke + kcal + nrf, data = vux_robust)
+
+fit_robust
+summary(fit_robust)
+nobs(fit_robust)
+
+plot(fit_robust)
+hist(rstandard(fit_robust), breaks = 30)
+```
+
+Removing the potentially influential observations does not materially affect the estimated association of its statistical significance. They are retained analysis.
 
 MULTIPLE IMPUTATION
 
@@ -158,7 +209,7 @@ Prepare for imputation
 imp_data <- as.data.frame(vux)
 
 #Define variables to exclude from imputation
-exclude_vars <- c("logBMI", "bmi", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+exclude_vars <- c("logBMI", "bmi", "overweight", "tertile_low", "tertile_mid", "tertile_up", "EP_upf_mid_10", "EP_upf_low_10", "EP_upf_up_10")
 
 pred <- make.predictorMatrix(imp_data)
 
@@ -222,7 +273,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -274,7 +325,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -318,7 +369,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -423,7 +474,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -469,7 +520,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -513,7 +564,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -557,7 +608,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
@@ -618,7 +669,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -653,8 +704,6 @@ final_table_crude
 
 ```
 
-Interpretation of estimate 1.0025: Since 1.0025 - 1 = 0.0025, it means that each 10% increase in E% upf was associated with 0.25% higher BMI.
-
 MODEL 1 - Sociodemographics only
 
 ```{r}
@@ -664,7 +713,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))
@@ -891,17 +940,17 @@ pool_pr_one_term <- function(robust, term) {
   Qbar <- mean(Q)
   Ubar <- mean(U)
   B <- var(Q)
-  T <- Ubar + (1+1/m)*B
-  se <- sqrt(T)
+  t <- Ubar + (1+1/m)*B
+  se <- sqrt(t)
   
   z <- Qbar / se
   p <- 2 * pnorm(-abs(z)) #two-sided Wald p-value
   
   data.frame(
     term = term,
-    PR <- exp(Qbar),
-    LCL <- exp(Qbar - 1.96 * se),
-    UCL <- exp(Qbar + 1.96 * se),
+    PR = exp(Qbar),
+    LCL = exp(Qbar - 1.96 * se),
+    UCL = exp(Qbar + 1.96 * se),
     logPR = Qbar,
     SE = se,
     z = z,
@@ -914,8 +963,8 @@ pool_pr_one_term <- function(robust, term) {
 Build summary table
 
 ```{r}
-PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_crude_mid
@@ -977,8 +1026,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_mid
@@ -1040,11 +1089,37 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model2_mid
+```
+
+Quick checks
+
+```{r}
+pool_pr_one_term(robust, "tertile_midT2")
+pool_pr_one_term(robust, "tertile_midT3")
+```
+
+```{r}
+sapply(robust, function(x) x$coef["tertile_midT3"])
+```
+
+One more quick sanity check
+
+```{r}
+tmp <- sapply(robust, function(x) x$coef ["tertile_midT3"])
+              mean(tmp)
+              exp(mean(tmp))
+```
+
+Compare the robust results with usual model-based Poisson results for one of the imputed datasets
+
+```{r}
+summary(models[[4]])$coefficients
+robust[[4]]$ct
 ```
 
 MODEL 3
@@ -1103,8 +1178,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model3_mid
@@ -1166,8 +1241,8 @@ terms_to_pool <- c("tertile_lowT2", "tertile_lowT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_low
@@ -1229,8 +1304,8 @@ terms_to_pool <- c("tertile_upT2", "tertile_upT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_up
@@ -1244,7 +1319,7 @@ Create a descriptive table with n and % of overweight per tertile
 dat <- subset(vux, !is.na(overweight))
 ```
 
-2)Create counts per tertile
+2)  Create counts per tertile
 
 ```{r}
 tab_n <- table(dat$tertile_mid, dat$overweight)
@@ -1291,14 +1366,14 @@ write.xlsx(sheets,
           )
 ```
 
-Sensitivity analysis of Poisson regression on pre-imputed dataset
+Sensitivity analysis of Poisson regression and logistic regression on pre-imputed dataset
 
 1.  Prepare data for complete cases
 
 ```{r}
 #Define covars
 
-covars <- covars3
+covars <- covars2
 ```
 
 ```{r}
@@ -1324,6 +1399,8 @@ fit <- glm(
   family = poisson(link = "log"),
   data = dat_cc
 )
+
+fit
 
 ```
 
@@ -1353,4 +1430,31 @@ results <- data.frame(
 )
 
 results
+```
+
+Run logistic regression as comparison
+
+```{r}
+form <- reformulate(
+  c("tertile_mid", covars),
+  response = "overweight"
+)
+
+```
+
+Fit logistic regression
+
+```{r}
+or_model <- glm(form, data = dat_cc, family = binomial)
+```
+
+Extract OR with CI
+
+```{r}
+cbind(
+  OR = exp(coef(or_model)),
+  exp(confint(or_model)),
+  p.value = summary(or_model)$coefficients[,4]
+)
+
 ```

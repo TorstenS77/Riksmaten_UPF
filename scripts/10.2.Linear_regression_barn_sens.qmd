@@ -28,9 +28,6 @@ Analytic code starts here
 ```{r message=FALSE, warning=FALSE}
 library(openxlsx)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 library(forcats)
 ```
 
@@ -52,7 +49,6 @@ master <- master %>%
     by = "person_ID"
   )
 ```
-
 
 Include only children from the 4 years old age group
 
@@ -151,7 +147,7 @@ Prepare for imputation
 imp_data <- as.data.frame(barn4)
 
 #Define variables to exclude from imputation
-exclude_vars <- c("bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+exclude_vars <- c("bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up", "EP_upf_mid_10", "EP_upf_low_10", "EP_upf_up_10")
 
 
 pred <- make.predictorMatrix(imp_data)
@@ -712,9 +708,9 @@ pool_pr_one_term <- function(robust, term) {
   
   data.frame(
     term = term,
-    PR <- exp(Qbar),
-    LCL <- exp(Qbar - 1.96 * se),
-    UCL <- exp(Qbar + 1.96 * se),
+    PR = exp(Qbar),
+    LCL = exp(Qbar - 1.96 * se),
+    UCL = exp(Qbar + 1.96 * se),
     logPR = Qbar,
     SE = se,
     z = z,
@@ -727,8 +723,8 @@ pool_pr_one_term <- function(robust, term) {
 Build summary table
 
 ```{r}
-PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_crude_mid
@@ -790,8 +786,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_mid
@@ -853,8 +849,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model2_mid
@@ -916,8 +912,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model3_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model3_mid
@@ -979,8 +975,8 @@ terms_to_pool <- c("tertile_lowT2", "tertile_lowT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_low <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_low
@@ -1042,8 +1038,8 @@ terms_to_pool <- c("tertile_upT2", "tertile_upT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_up <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_up

@@ -1,0 +1,623 @@
+---
+title: "Foodgroups barplot"
+format: html
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+analysis code starts here
+
+```{r message=FALSE, warning=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library(ggplot2)
+
+```
+
+Geet excel sheet names
+
+```{r}
+getSheetNames(
+  file.path(dir_output, "Foodgroups_results_mid.xlsx")
+)
+```
+Rename sheets
+
+```{r}
+#Sheet names in Excel
+excel_sheets <- c(
+  "by RM only",
+  "by agegroup",
+  "by_sex",
+  "by age and sex"
+)
+
+#Short names to use in R
+
+r_names <- c(
+  "rm",
+  "age",
+  "sex",
+  "age_sex"
+)
+
+```
+
+Function to import one wb
+
+```{r}
+import_foodgroups <- function(filename) {
+  
+  wb <- lapply(
+    excel_sheets, 
+    function(sheet) {
+      read.xlsx(
+        file.path(dir_output, filename),
+        sheet = sheet
+      )
+    }
+  )
+  
+names(wb) <- r_names
+
+wb
+}
+```
+
+Apply function to import data
+
+```{r}
+foodgroups_low <- import_foodgroups("Foodgroups_results_low.xlsx")
+foodgroups_mid <- import_foodgroups("Foodgroups_results_mid.xlsx")
+foodgroups_up <- import_foodgroups("Foodgroups_results_up.xlsx")
+
+```
+
+```{r}
+foodgroups_mid$rm
+```
+Bread
+Sand_dish
+Sugar
+Meat
+Fine_bakery
+Condi
+Ssb
+Friedfood
+Meat_dish
+Milk
+
+Inspect names
+
+```{r}
+names(foodgroups_mid$rm)
+unique(foodgroups_mid$rm$subgroup)
+unique(foodgroups_mid$rm$RM)
+```
+Check top 10 total
+
+```{r}
+subgroup_order_df <- foodgroups_mid$rm %>% 
+  group_by(subgroup) %>% 
+  summarise(
+    rank_score = sum(upf_mid_E_pct),
+    .groups = "drop"
+  ) %>% 
+  arrange(desc(rank_score))
+
+```
+
+```{r}
+subgroup_order_df %>% 
+  slice_head(n = 11)
+```
+
+Define subgroups names and plotting order
+
+```{r}
+subgroup_labels <- c(
+  "Bread" = "Bread",
+  "Sand_dish" = "Sandwiches, pizzas and similar",
+  "Meat" = "Meat and meat products",
+  "Sugar" = "Sugar and confectionery",
+  "Fine_bakery" = "Fine bakery wares",
+  "Condi" = "Savoury sauces and condiments",
+  "Ssb" = "Sugar-sweetened beverages",
+  "Friedfood" = "Savoury snacks",
+  "Meat_dish" = "Meat dishes",
+  "Milk" = "Milk, yoghurt and similar"
+)
+```
+
+Define plotting order
+
+```{r}
+subgroup_order <- c(
+  "Bread",
+  "Sandwiches, pizzas and similar",
+  "Meat and meat products",
+  "Sugar and confectionery",
+  "Fine bakery wares",
+  "Savoury sauces and condiments",
+  "Sugar-sweetened beverages",
+  "Savoury snacks",
+  "Meat dishes",
+  "Milk, yoghurt and similar"
+)
+```
+
+Define the RM labels and their order
+
+```{r}
+rm_labels <- c(
+  "Vuxna" = "Adults",
+  "Ungdom" = "Adolescents",
+  "Barn" = "Young Children"
+)
+```
+
+```{r}
+rm_order <- c(
+  "Adults",
+  "Adolescents",
+  "Young Children"
+)
+
+```
+
+
+Create the main plotting table
+
+```{r}
+#Middle bound scenario
+
+plot_mid <- foodgroups_mid$rm %>% 
+  filter(subgroup %in% names(subgroup_labels)) %>% 
+  transmute(
+    subgroup = recode(subgroup, !!!subgroup_labels),
+    RM = recode(RM, !!!rm_labels),
+    estimate = upf_mid_E_pct
+  ) %>% 
+  mutate(
+    subgroup = factor(subgroup, levels = subgroup_order),
+    RM = factor(RM, levels = rm_order)
+  ) %>% 
+  arrange(subgroup, RM)
+
+```
+
+```{r}
+plot_mid
+```
+Create corresponding lower- and upper-bound tables
+
+```{r}
+plot_low <- foodgroups_low$rm %>% 
+  filter(subgroup %in% names(subgroup_labels)) %>% 
+  transmute(
+    subgroup = recode(subgroup, !!!subgroup_labels),
+    RM = recode(RM, !!!rm_labels),
+    lower = upf_low_E_pct
+  ) %>% 
+  mutate(
+    subgroup = factor(subgroup, levels = subgroup_order),
+    RM = factor(RM, levels = rm_order)
+  ) %>% 
+  arrange(subgroup, RM)
+
+
+plot_up <- foodgroups_up$rm %>% 
+  filter(subgroup %in% names(subgroup_labels)) %>% 
+  transmute(
+    subgroup = recode(subgroup, !!!subgroup_labels),
+    RM = recode(RM, !!!rm_labels),
+    upper = upf_up_E_pct
+  ) %>% 
+  mutate(
+    subgroup = factor(subgroup, levels = subgroup_order),
+    RM = factor(RM, levels = rm_order)
+  ) %>% 
+  arrange(subgroup, RM)
+
+```
+
+Join tables
+
+```{r}
+plot_data <- plot_mid %>% 
+  left_join(
+    plot_low,
+    by = c("subgroup", "RM")
+  ) %>% 
+  left_join(
+    plot_up,
+    by = c("subgroup", "RM")
+  ) %>% 
+  arrange(subgroup, RM)
+
+```
+
+```{r}
+plot_data
+```
+
+Define bar appearance
+
+```{r}
+bar_colors <- c(
+  "Adults" = "royalblue3",
+  "Adolescents" = "chartreuse3",
+  "Young Children" = "indianred3"
+)
+
+bar_alpha <- 0.85
+
+bar_border <- c(
+  "Adults" = "royalblue4",
+  "Adolescents" = "chartreuse4",
+  "Young Children" = "indianred4"
+)
+```
+
+```{r}
+dodge_position <-  position_dodge2(
+  width = 0.9,
+  preserve = "single",
+  padding = 0
+)
+
+error_position <- position_dodge(
+  width = 0.75
+)
+```
+
+
+Create plot
+
+```{r}
+barplot <- ggplot(
+  plot_data,
+  aes(
+    x = subgroup,
+    y = estimate,
+    fill = RM,
+    colour = RM,
+    group = RM
+  )
+) +
+  geom_col(
+    position = dodge_position,
+    width = 0.75,
+    alpha = bar_alpha,
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = lower,
+      ymax = upper
+    ),
+    position = error_position,
+      width = 0.15,
+    ) +
+  scale_fill_manual(
+    values = bar_colors,
+    name = NULL
+  )+
+  scale_color_manual(
+    values = bar_border,
+    name = NULL
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    x = NULL,
+    y = "Contribution to total energy intake (E%)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  )
+
+barplot
+  
+```
+
+Save images
+
+```{r}
+
+ggsave(
+  filename = file.path(dir_output, "Foodgroups_figure.png"),
+  plot = barplot,
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
+
+
+```
+
+And as pdf
+
+```{r}
+ggsave(
+  filename = file.path(dir_output, "Foodgroups_figure.pdf"),
+  plot = barplot,
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
+
+```
+
+
+Supplement table S7
+
+```{r}
+names(foodgroups_mid$rm)
+
+names(foodgroups_mid$age)
+
+names(foodgroups_mid$sex)
+
+names(foodgroups_mid$age_sex)
+
+```
+Inspect the grouping values
+
+```{r}
+unique(foodgroups_mid$rm$RM)
+
+unique(foodgroups_mid$age[, c("RM", "age_grp")])
+
+unique(foodgroups_mid$sex[, c("RM", "sex")])
+
+unique(foodgroups_mid$age_sex[, c("RM", "age_grp", "sex")])
+```
+
+Define order of sections
+
+```{r}
+section_order <- c(
+  "Vuxna",
+  "60-80",
+  "40-59",
+  "18-39",
+  "Ungdom",
+  "Ak2_g",
+  "Ak8",
+  "Ak5",
+  "Barn",
+  "4_ar",
+  "18_manad"
+)
+
+sex_order <- c(
+  "Overall",
+  "M",
+  "F"
+)
+
+sex_rm_order <- as.vector(
+  outer(
+    section_order,
+    sex_order,
+    paste,
+    sep = ", "
+  )
+)
+
+```
+
+
+Build overall table
+
+```{r}
+top5_foodgroups <- function(df) {
+  
+  df %>% 
+    arrange(desc(upf_mid_E_pct)) %>% 
+    slice_head(n = 5) %>% 
+    transmute(
+      Foodgroup = subgroup, 
+      Estimate = round(upf_mid_E_pct, 1)
+    )
+}
+```
+
+
+```{r}
+make_top5_section <- function(df, group_label) {
+  
+  top5_foodgroups(df) %>% 
+    mutate(Group = group_label, .before = 1)
+}
+```
+
+Build the overall RM sections
+
+```{r}
+rm_sections <- lapply(
+  unique(foodgroups_mid$rm$RM),
+  function(rm_value) {
+    
+    make_top5_section(
+      foodgroups_mid$rm %>% 
+        filter(RM == rm_value),
+      group_label = rm_value
+    )
+  }
+)
+```
+
+Combine
+
+```{r}
+rm_sections <- bind_rows(rm_sections)
+```
+
+Create the age-group sections
+
+```{r}
+age_sections <- foodgroups_mid$age %>% 
+  group_split(RM, age_grp) %>% 
+  lapply(function(df) {
+    
+    make_top5_section(
+      df,
+      group_label = unique(df$age_grp)
+    )
+  }) %>% 
+  bind_rows()
+
+```
+
+Combine and order
+
+```{r}
+overall_age_table <- bind_rows(
+  rm_sections,
+  age_sections
+) %>% 
+  mutate(
+    Group = factor(Group, levels = section_order)
+  ) %>% 
+  arrange(Group, desc(Estimate))
+```
+
+```{r}
+overall_age_table
+```
+
+Create sex sections
+
+```{r}
+sex_sections <- foodgroups_mid$sex %>% 
+  group_split(RM, sex) %>% 
+  lapply(function(df) { 
+    
+    group_name <- paste(
+      unique(df$RM),
+      unique(df$sex),
+      sep = ", "
+    )
+    
+    make_top5_section(
+      df,
+      group_label = group_name
+    )
+   }) %>% 
+  bind_rows()
+```
+
+Order
+
+```{r}
+sex_sections <- sex_sections %>% 
+  mutate(
+    Group = factor(Group, levels = sex_rm_order)
+  ) %>% 
+  arrange(Group, desc(Estimate))
+
+```
+
+```{r}
+sex_sections
+```
+
+Create sex x age sections
+
+```{r}
+age_sex_sections <- foodgroups_mid$age_sex %>% 
+  group_split(age_grp, sex) %>% 
+  lapply(function(df) {
+    
+    group_name <- paste(
+      unique(df$age_grp),
+      unique(df$sex),
+      sep = ", "
+    )
+    
+    make_top5_section(
+      df,
+      group_label = group_name
+    )
+  }) %>% 
+  bind_rows
+```
+
+```{r}
+age_sex_sections
+```
+
+Arrange
+
+```{r}
+age_sex_order <- as.vector(
+  outer(
+    section_order[-c(1,5,9)], 
+    sex_order,
+    paste,
+    sep = ", "
+  )
+)
+```
+
+```{r}
+age_sex_sections <- age_sex_sections %>% 
+  mutate(
+    Group = factor(Group, levels = age_sex_order)
+  ) %>% 
+  arrange(Group, desc(Estimate))
+```
+
+```{r}
+age_sex_sections
+```
+
+Write to Excel
+
+```{r}
+wb <- createWorkbook()
+
+addWorksheet(wb, "Overall and age")
+writeData(wb, "Overall and age", overall_age_table)
+
+addWorksheet(wb, "Sex")
+writeData(wb, "Sex", sex_sections)
+
+addWorksheet(wb, "Age and sex")
+writeData(wb, "Age and sex", age_sex_sections)
+
+saveWorkbook(
+  wb,
+  file.path(dir_output, "Foodgroups_top5.xlsx"),
+  overwrite = TRUE
+)
+```
+
+
+
+

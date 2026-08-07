@@ -3,6 +3,7 @@ title: "Linear regression of BMI-z and weight status among adolescents"
 format: html
 editor: visual
 ---
+
 Sensitivity analysis excluding suspected misreporters
 
 1)  Multiple imputation
@@ -27,9 +28,6 @@ Analytic code starts here
 ```{r message=FALSE, warning=FALSE}
 library(openxlsx)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 library(forcats)
 ```
 
@@ -64,7 +62,7 @@ ungdom1 <- master %>%
 Exclude individuals older than 18 years
 
 ```{r}
-sum(ungdom1$age >=18, na.rm = T)
+sum(ungdom1$age >=18, na.rm = TRUE)
 
 ungdom <- ungdom1[ungdom1$age <18, ]
 ```
@@ -160,7 +158,7 @@ Prepare for imputation
 imp_data <- as.data.frame(ungdom)
 
 #Define variables to exclude from imputation
-exclude_vars <- c( "bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up")
+exclude_vars <- c( "bmi", "bmi_z", "overweight", "tertile_low", "tertile_mid", "tertile_up", "EP_upf_mid_10", "EP_upf_low_10", "EP_upf_up_10")
 
 pred <- make.predictorMatrix(imp_data)
 
@@ -569,17 +567,17 @@ pool_pr_one_term <- function(robust, term) {
   Qbar <- mean(Q)
   Ubar <- mean(U)
   B <- var(Q)
-  T <- Ubar + (1+1/m)*B
-  se <- sqrt(T)
+  t <- Ubar + (1+1/m)*B
+  se <- sqrt(t)
   
   z <- Qbar / se
   p <- 2 * pnorm(-abs(z)) #two-sided Wald p-value
   
   data.frame(
     term = term,
-    PR <- exp(Qbar),
-    LCL <- exp(Qbar - 1.96 * se),
-    UCL <- exp(Qbar + 1.96 * se),
+    PR = exp(Qbar),
+    LCL = exp(Qbar - 1.96 * se),
+    UCL = exp(Qbar + 1.96 * se),
     logPR = Qbar,
     SE = se,
     z = z,
@@ -592,8 +590,8 @@ pool_pr_one_term <- function(robust, term) {
 Build summary table
 
 ```{r}
-PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_crude_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_crude_mid
@@ -655,8 +653,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model1_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model1_mid
@@ -718,8 +716,8 @@ terms_to_pool <- c("tertile_midT2", "tertile_midT3")
 Build summary table
 
 ```{r}
-PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(trm) {
-  pool_pr_one_term(robust, trm)
+PR_summary_model2_mid <- do.call(rbind, lapply(terms_to_pool, function(term) {
+  pool_pr_one_term(robust, term)
 }))
 
 PR_summary_model2_mid

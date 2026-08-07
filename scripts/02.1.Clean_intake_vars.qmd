@@ -230,35 +230,14 @@ food_lookup <- food_items %>%
   dplyr::select(
     food_ID, subgroup, bev,
     keyhole, keyhole_ratio,
-    ratio_upf_low, ratio_upf_mid, ratio_upf_up
+    ratio_upf_low, ratio_upf_mid_vux, ratio_upf_mid_barn, ratio_upf_mid_ungdom, ratio_upf_up
   ) %>% 
-  distinct(food_ID, .keep_all = T)
+  distinct(food_ID, .keep_all = TRUE)
 
-#2. Function to apply to vux / ungdom / barn
-clean_and_join <- function(df, prefix, rm_label, food_lookup) {
-  df %>% 
-    mutate(
-      person_ID = paste0(prefix, as.character(person_ID)),
-      RM = rm_label
-    ) %>% 
-    left_join(food_lookup, by = "food_ID") %>% 
-    group_by(person_ID) %>% 
-    mutate(
-      day_count = n_distinct(day_nr)
-    ) %>% 
-    ungroup() %>% 
-    mutate(
-      #GEF kcal
-      keyhole_kcal = kcal * keyhole_ratio,
-      
-      #UPF kcal by scenario
-      upf_low_kcal = kcal * ratio_upf_low,
-      upf_mid_kcal = kcal * ratio_upf_mid,
-      upf_up_kcal = kcal * ratio_upf_up
-    )
-}
+```
 
-#3. Put datasets in one list and apply function
+```{r}
+#2. Put datasets in one list
 datasets <- list(
   vux = vux,
   ungdom = ungdom,
@@ -276,7 +255,45 @@ rm_labels <- c(
   ungdom = "Ungdom",
   barn = "Barn"
 )
+```
 
+
+```{r}
+#3. Function to apply to vux / ungdom / barn
+clean_and_join <- function(df, prefix, rm_label, food_lookup) {
+  
+  mid_ratio_col <- switch(
+    rm_label,
+    "Vuxna" = "ratio_upf_mid_vux",
+    "Barn" = "ratio_upf_mid_barn",
+    "Ungdom" = "ratio_upf_mid_ungdom",
+    stop("Unknown rm_label: ", rm_label)
+  )
+  
+  df %>% 
+    mutate(
+      person_ID = paste0(prefix, as.character(person_ID)),
+      RM = rm_label
+    ) %>% 
+    left_join(food_lookup, by = "food_ID") %>% 
+    group_by(person_ID) %>% 
+    mutate(
+      day_count = n_distinct(day_nr)
+    ) %>% 
+    ungroup() %>% 
+    mutate(
+      #GEF kcal
+      keyhole_kcal = kcal * keyhole_ratio,
+      
+      #UPF kcal by scenario
+      upf_low_kcal = kcal * ratio_upf_low,
+      upf_mid_kcal = kcal * .data[[mid_ratio_col]],
+      upf_up_kcal = kcal * ratio_upf_up
+    )
+}
+```
+
+```{r}
 #4. Apply function
 datasets_clean <- imap(
   datasets, 
@@ -287,15 +304,62 @@ datasets_clean <- imap(
     food_lookup = food_lookup
   )
 )
+```
 
-
+```{r}
 #5. Write back to objects
 
 vux <- datasets_clean$vux
 ungdom <- datasets_clean$ungdom
 barn<- datasets_clean$barn
+```
+
+Spot-check, using food_ID 241 (Råstekt potatis)
+
+```{r}
+#inspect in food_items
+
+food_items %>% 
+  filter(food_ID == 241) %>% 
+  select(
+    food_ID,
+    food,
+    ratio_upf_mid_vux,
+    ratio_upf_mid_barn
+  )
+```
+```{r}
+#Inspect the first five matching rows in vux
+vux %>% 
+  filter(food_ID == 241) %>% 
+  select(
+    food_ID,
+    food,
+    subgroup,
+    kcal,
+    ratio_upf_mid_vux,
+    upf_mid_kcal
+  ) %>% 
+  slice_head(n = 5)
 
 ```
+
+```{r}
+#Inspect the first five matching rows in barn
+barn %>% 
+  filter(food_ID == 6405) %>% 
+  select(
+    food_ID,
+    food,
+    subgroup,
+    kcal,
+    ratio_upf_mid_barn,
+    upf_mid_kcal
+  ) %>% 
+  slice_head(n = 5)
+
+```
+
 
 Sanity check
 
@@ -406,7 +470,7 @@ barn_final <- keep_vars(barn_final, vars_final)
 Save cleaned intake datasets as rds files
 
 ```{r}
-saveRDS(vux_final, file.path(dir_output, "RM_vux_clean.rds"))
-saveRDS(ungdom_final, file.path(dir_output, "RM_ungdom_clean.rds"))
-saveRDS(barn_final, file.path(dir_output, "RM_barn_clean.rds"))
+saveRDS(vux_final, file.path(dir_data, "RM_vux_clean.rds"))
+saveRDS(ungdom_final, file.path(dir_data, "RM_ungdom_clean.rds"))
+saveRDS(barn_final, file.path(dir_data, "RM_barn_clean.rds"))
 ```

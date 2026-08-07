@@ -18,7 +18,7 @@ project_root <- normalizePath(file.path(getwd(), ".."))
 dir_data <- file.path(project_root, "data")
 dir_output <- file.path(project_root, "output")
 
-dir.create(dir_output, showWarnings = F, recursive = T)
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 ```
 
@@ -29,9 +29,6 @@ analysis code starts here
 library(openxlsx)
 library(writexl)
 library(dplyr)
-library (tidyr)
-library(stringr)
-library(purrr)
 
 ```
 
@@ -650,5 +647,5 @@ master <- data %>%
 and save as RDS
 
 ```{r}
-saveRDS(master, file.path(dir_output, "Masterfile.rds"))
+saveRDS(master, file.path(dir_data, "Masterfile.rds"))
 ```

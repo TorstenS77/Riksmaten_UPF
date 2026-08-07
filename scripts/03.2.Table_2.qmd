@@ -1,0 +1,442 @@
+---
+title: "UPF intake by food group, UPF E% and GEF E%"
+author: "Torsten Sällström"
+format: html
+editor: visual
+---
+
+In this script we: 1) summarize the foodgroups that contribute most kcal from UPF on population level. 2) calculate the dietary share of food items classified as GEF 3) collapses the dataset to one row per observatio and calculates E% UPF according to three classification scenarios.
+
+Starting with the clean intake datasets created in step 02.1
+
+```{r}
+#| label: setup
+#| include: false
+
+project_root <- normalizePath(file.path(getwd(), ".."))
+
+dir_data <- file.path(project_root, "data")
+dir_output <- file.path(project_root, "output")
+
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
+
+```
+
+analysis code starts here
+
+```{r message=FALSE, warning=FALSE}
+
+library(openxlsx)
+library(writexl)
+library(dplyr)
+library (tidyr)
+```
+
+Import data (choose dataset)
+
+```{r}
+df_collapsed <- readRDS(file.path(dir_data, "Data_collapsed.rds"))
+
+```
+
+MIDDLE BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_mid_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_mid_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_mid_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_mid, na.rm = TRUE),
+    sd_EP = sd(EP_upf_mid, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_mid_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_mid_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_mid_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_mid, na.rm = TRUE),
+    sd_EP = sd(EP_upf_mid, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+summary_all
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+#Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_mid_kcal ~sex, 
+      data = dat,
+      paired = FALSE,
+      conf.int = TRUE,
+      conf.level = 0.95,
+      exact = FALSE
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_mid ~sex, 
+      data = dat,
+      var.equal = FALSE
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+tests
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_mid <- summary_all %>% 
+  left_join(tests, by = "RM")
+
+results_mid
+```
+
+6. Summary stats by age group
+
+```{r}
+age_grp_summary_mid <- df_collapsed %>% 
+  group_by(RM, age_grp) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_mid_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_mid_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_mid_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_mid, na.rm = TRUE),
+    sd_EP = sd(EP_upf_mid, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+age_grp_summary_mid
+```
+
+
+
+
+LOWER BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_low_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_low_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_low_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_low, na.rm = TRUE),
+    sd_EP = sd(EP_upf_low, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_low_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_low_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_low_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_low, na.rm = TRUE),
+    sd_EP = sd(EP_upf_low, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+##Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_low_kcal ~sex, 
+      data = dat,
+      paired = FALSE,
+      conf.int = TRUE,
+      conf.level = 0.95,
+      exact = FALSE
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_low ~sex, 
+      data = dat,
+      var.equal = FALSE
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_low <- summary_all %>% 
+  left_join(tests, by = "RM")
+results_low
+
+```
+
+
+
+6. Summary stats by age group
+
+```{r}
+age_grp_summary_low <- df_collapsed %>% 
+  group_by(RM, age_grp) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_low_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_low_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_low_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_low, na.rm = TRUE),
+    sd_EP = sd(EP_upf_low, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+age_grp_summary_low
+
+```
+
+
+UPPER BOUND
+
+1.  Summary stats
+
+```{r}
+summary_stats <- df_collapsed %>% 
+  group_by(RM, sex) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_up_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_up_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_up_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_up, na.rm = TRUE),
+    sd_EP = sd(EP_upf_up, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+2.  Add subgroups totals (ignore sex)
+
+```{r}
+summary_totals <- df_collapsed %>% 
+  group_by(RM) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_up_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_up_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_up_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_up, na.rm = TRUE),
+    sd_EP = sd(EP_upf_up, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  mutate(sex = "Total")
+
+summary_all <- bind_rows(summary_totals, summary_stats)
+
+```
+
+3.  Wilcoxon's test and t-test
+
+```{r}
+##Run per RM, comparing sexes
+tests <- df_collapsed %>% 
+  group_by(RM) %>% 
+  group_map(~{
+    dat <- .x
+    
+    w <- wilcox.test(
+      upf_up_kcal ~sex, 
+      data = dat,
+      paired = FALSE,
+      conf.int = TRUE,
+      conf.level = 0.95,
+      exact = FALSE
+      )
+    #Welch t-test, mean diff + 95% CI
+    tt <- t.test(
+      EP_upf_up ~sex, 
+      data = dat,
+      var.equal = FALSE
+    )
+    
+    tibble(
+      RM = .y$RM,
+      
+      wilcox_hl = w$estimate,
+      wilcox_ci_low = w$conf.int[1],
+      wilcox_ci_high = w$conf.int[2],
+      wilcox_p = w$p.value,
+      
+      t_mean_diff = unname(diff(rev(tt$estimate))),
+      t_ci_low = tt$conf.int[1],
+      t_ci_high = tt$conf.int[2],
+      t_p = tt$p.value
+    )
+  }) %>% 
+  bind_rows()
+
+tests
+```
+
+4.  Adjust p-values
+
+```{r}
+tests <- tests %>% 
+  mutate(
+    wilcox_p_adj = p.adjust(wilcox_p, method = "BH"),
+    ttest_p_adj = p.adjust(t_p, method = "BH")
+  )
+
+```
+
+5.  Collect into one dataframe
+
+```{r}
+results_up <- summary_all %>% 
+  left_join(tests, by = "RM")
+results_up
+
+```
+
+6. Summary stats by age group
+
+```{r}
+age_grp_summary_up <- df_collapsed %>% 
+  group_by(RM, age_grp) %>% 
+  summarise(
+    n = n(),
+    median_upf = median(upf_up_kcal, na.rm = TRUE),
+    p25_upf = quantile(upf_up_kcal, 0.25, na.rm = TRUE),
+    p75_upf = quantile(upf_up_kcal, 0.75, na.rm = TRUE),
+    mean_EP = mean(EP_upf_up, na.rm = TRUE),
+    sd_EP = sd(EP_upf_up, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+age_grp_summary_up
+
+```
+
+
+
+Export to one excelfile
+
+```{r}
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "results_mid")
+writeData(wb, "results_mid", results_mid)
+
+addWorksheet(wb, "age_groups_mid")
+writeData(wb, "age_groups_mid", age_grp_summary_mid)
+
+addWorksheet(wb, "results_low")
+writeData(wb, "results_low", results_low)
+
+addWorksheet(wb, "age_groups_low")
+writeData(wb, "age_groups_low", age_grp_summary_low)
+
+addWorksheet(wb, "results_up")
+writeData(wb, "results_up", results_up)
+
+addWorksheet(wb, "age_groups_up")
+writeData(wb, "age_groups_up", age_grp_summary_up)
+
+saveWorkbook(wb, 
+             file = file.path(dir_output, "Table2_results.xlsx"), 
+             overwrite = TRUE
+          )
+
+```

@@ -127,7 +127,7 @@ qreg_orig <- function(data, outcome, predictor, covars_m1,
     ci_lower = ci[1],
     ci_upper = ci[2],
     p_value = pval,
-    stringsAsFactors = F
+    stringsAsFactors = FALSE
   )
   
 }
@@ -246,6 +246,6 @@ writeData(wb, sheet = "model_2", results_m2)
 
 saveWorkbook(wb, 
              file = file.path(dir_output, "AR_results_barn.xlsx"), 
-             overwrite = T
+             overwrite = TRUE
             )
 ```
