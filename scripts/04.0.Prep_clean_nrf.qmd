@@ -7,7 +7,6 @@ editor: visual
 
 This script prepares the nutrient intake variables needed for subsequent analyses and combines intake data with background variables to one Masterfile. It starts with the collapsed and combined dataset created in step 3.0 as well as the clean background datasets for each survey.
 
-Starting with the clean intake datasets created in step 02.1
 
 ```{r}
 #| label: setup
@@ -188,11 +187,12 @@ data <- data %>%
       age_band == "1-3" ~20,
       age_band == "4-6" ~30,
       age_band == "7-10" ~45,
+      
       age_band == "11-14" & sex == "F" ~60,
+      age_band %in% c("15-17", "18-24", "25-50", "51-70", ">70") & sex == "F" ~75,
+      
       age_band == "11-14" & sex == "M" ~65,
-      age_band == "15-17" & sex == "F" ~75,
       age_band == "15-17" & sex == "M" ~85,
-      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~75,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~90,
       TRUE ~NA_real_
     ),
@@ -201,11 +201,13 @@ folate_AR = case_when(
       age_band == "1-3" ~90,
       age_band == "4-6" ~110,
       age_band == "7-10" ~160,
+      
       age_band == "11-14" & sex == "F" ~220,
-      age_band == "11-14" & sex == "M" ~200,
       age_band == "15-17" & sex == "F" ~240,
-      age_band == "15-17" & sex == "M" ~250,
-      age_band %in% c("18-24", "25-50", "51-70", ">70") ~250,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~250,
+      
+      age_band == "11-14" & sex == "M" ~200,
+      age_band %in% c("15-17", "18-24", "25-50", "51-70", ">70") & sex == "M" ~250,
       TRUE ~NA_real_
     ),
 
@@ -213,9 +215,10 @@ ca_AR = case_when(
      age_band == "1-3" ~400,
      age_band == "4-6" ~700,
      age_band == "7-10" ~675,
+     
      age_band %in% c("11-14", "15-17")~980,
-     age_band %in% c("18-24", "25-50")~870,
-     age_band %in% c("51-70", ">70")  ~750,
+     age_band == "18-24" ~870,
+     age_band %in% c("25-50", "51-70", ">70")  ~750,
      TRUE ~NA_real_
 ),
 
@@ -223,23 +226,26 @@ fe_AR = case_when(
    age_band == "1-3" ~6,
       age_band == "4-6" ~5,
       age_band == "7-10" ~7,
+   
       age_band == "11-14" & sex == "F" ~10,
-      age_band == "11-14" & sex == "M" ~9,
-      age_band == "15-17" ~9,
-      age_band %in% c("18-24", "25-50") & sex == "F" ~9,
-      age_band %in% c("18-24", "25-50") & sex == "M" ~7,
+      age_band %in% c("15-17", "18-24", "25-50") & sex == "F" ~9,
       age_band %in% c("51-70", ">70") & sex == "F" ~6,
-      age_band %in% c("51-70", ">70") & sex == "M" ~7,
+   
+      age_band %in% c("11-14", "15-17") & sex == "M" ~9,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~7,
       TRUE ~NA_real_
     ),
+
   vitE_AR = case_when(
       age_band == "1-3" ~6,
       age_band %in% c("4-6","7-10") ~7,
+      
       age_band == "11-14" & sex == "F" ~8,
-      age_band == "11-14" & sex == "M" ~9,
       age_band == "15-17" & sex == "F" ~9,
-      age_band == "15-17" & sex == "M" ~10,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~8,
+      
+      age_band == "11-14" & sex == "M" ~9,
+      age_band == "15-17" & sex == "M" ~10,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~9,
       TRUE ~NA_real_
     ),
@@ -248,10 +254,13 @@ fe_AR = case_when(
       age_band == "1-3" ~1.2,
       age_band == "4-6" ~1.4,
       age_band == "7-10" ~2.0,
+      
       age_band == "11-14" & sex == "F" ~2.8,
-      age_band == "11-14" & sex == "M" ~2.6,
       age_band == "15-17" & sex == "F" ~3.1,
+      
+      age_band == "11-14" & sex == "M" ~2.6,
       age_band == "15-17" & sex == "M" ~3.2,
+      
       age_band %in% c("18-24", "25-50", "51-70", ">70") ~3.2,
       TRUE ~NA_real_
     ),
@@ -260,11 +269,13 @@ fe_AR = case_when(
       age_band == "1-3" ~700,
       age_band == "4-6" ~900,
       age_band == "7-10" ~1450,
+      
       age_band == "11-14" & sex == "F" ~1900,
-      age_band == "11-14" & sex == "M" ~2050,
       age_band == "15-17" & sex == "F" ~2250,
-      age_band == "15-17" & sex == "M" ~2700,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~2800,
+      
+      age_band == "11-14" & sex == "M" ~2050,
+      age_band == "15-17" & sex == "M" ~2700,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~2800,
       TRUE ~NA_real_
     ),
@@ -273,17 +284,17 @@ fe_AR = case_when(
       age_band == "1-3" ~15,
       age_band == "4-6" ~20,
       age_band == "7-10" ~35,
-      age_band == "11-14" ~50,
+      
+      age_band == "11-14" & sex == "F" ~50,
       age_band == "15-17" & sex == "F" ~55,
-      age_band == "15-17" & sex == "M" ~70,
       age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~60,
-      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~70,
+      
+      age_band == "11-14" & sex == "M" ~50,
+      age_band %in% c("15-17", "18-24", "25-50", "51-70", ">70") & sex == "M" ~70,
       TRUE ~NA_real_
     ),
 )
 
-    
-  
 ```
 
 ```{r}
@@ -326,113 +337,141 @@ d1 <- data
 
 Create RI/MRI denominators per day
 
+Define AR-values for selected vitamins and minerals based on sex and age
+
 ```{r}
 d2 <- d1 %>%
   mutate(
     # --- RI per DAY  ---
     vitA_drv = case_when(
-      age < 4 ~300,
-      age >= 4 & age < 7 ~350,
-      age >= 7 & age < 11 ~450,
-      sex == "F" & age >= 11 & age < 18 ~650,
-      sex == "F" & age >= 18 ~700,
-      sex == "M" & age >= 11 & age < 15 ~700,
-      sex == "M" & age >= 15 & age < 18 ~750,
-      sex == "M" & age >= 18 ~800,
-      TRUE ~ NA_real_
+      age_band == "1-3" ~300,
+      age_band == "4-6" ~350,
+      age_band == "7-10" ~450,
+      
+      age_band %in% c("11-14", "15-17") & sex == "F" ~650,
+      age_band %in% c("18-24", "25-50", "51-70") & sex == "F" ~700,
+      age_band == ">70" & sex == "F" ~650,
+      
+      age_band == "11-14" & sex == "M" ~700,
+      age_band == "15-17" & sex == "M" ~750,
+      age_band %in% c("18-24", "25-50", "51-70") & sex == "M" ~800,
+      age_band == ">70" & sex == "M" ~750,
+      TRUE ~NA_real_
     ),
-    vitC_drv = case_when(
-      age < 4 ~25,
-      age >= 4 & age < 7 ~35,
-      age >= 7 & age < 11 ~55,
-      sex == "F" & age >= 11 & age < 15 ~75,
-      sex == "M" & age >= 11 & age < 15 ~80,
-      sex == "F" & age >= 15 & age < 18 ~90,
-      sex == "M" & age >= 15 & age < 18 ~105,
-      sex == "F" & age >= 18 ~95,
-      sex == "M" & age >= 18 ~110,
-      TRUE ~ NA_real_
-    ),
+      
     vitD_drv = case_when(
-      age < 70 ~10,
-      age >= 70 ~20,
-      TRUE ~ NA_real_
-    ),
-    vitE_drv = case_when(
-      age < 4 ~7,
-      age >= 4 & age < 7 ~8,
-      age >= 7 & age < 11 ~9,
-      sex == "F" & age >= 11 & age < 15 ~10,
-      sex == "F" & age >= 15 & age < 18 ~11,
-      sex == "F" & age >= 18 ~10,
-      sex == "M" & age >= 11 & age < 15 ~11,
-      sex == "M" & age >= 15 & age < 18 ~12,
-      sex == "M" & age >= 18 ~11,
-      TRUE ~ NA_real_
-    ),
-    folate_drv = case_when(
-      age < 4 ~120,
-      age >= 4 & age < 7 ~140,
-      age >= 7 & age < 11 ~200,
-      sex == "F" & age >= 11 & age < 15 ~280,
-      sex == "F" & age >= 15 & age < 18 ~340,
-      sex == "F" & age >= 18 ~330,
-      sex == "M" & age >= 11 & age < 15 ~260,
-      sex == "M" & age >= 15 & age < 18 ~320,
-      sex == "M" & age >= 18 ~330,
-      TRUE ~ NA_real_
-    ),
-    fe_drv = case_when(
-      age < 4 ~7,
-      age >= 4 & age < 7 ~7,
-      age >= 7 & age < 11 ~9,
-      sex == "F" & age >= 11 & age < 15 ~13,
-      sex == "M" & age >= 11 & age < 15 ~11,
-      sex == "F" & age >= 15 ~15,
-      sex == "M" & age >= 15 & age < 18 ~11,
-      sex == "M" & age >= 18 ~9,
-      TRUE ~ NA_real_ 
-      ),
-    ca_drv = case_when(
-      age < 4 ~450,
-      age >= 4 & age < 7 ~800,
-      age >= 7 & age < 11 ~800,
-      age >= 11 & age < 18 ~1150,
-      age >= 18 & age < 25 ~1000,
-      age >= 25 ~950,
-      TRUE ~ NA_real_
-    ),
-     k_drv = case_when(
-      age < 4 ~850,
-      age >= 4 & age < 7 ~1150,
-      age >= 7 & age < 11 ~1800,
-      sex == "F" & age >= 11 & age < 15 ~2400,
-      sex == "M" & age >= 11 & age < 15 ~2550,
-      sex == "F" & age >= 15 & age < 18 ~2850,
-      sex == "M" & age >= 15 & age < 18 ~3400,
-      sex == "F" & age >= 18 ~3500,
-      sex == "M" & age >= 18 ~3500,
-      TRUE ~ NA_real_
-    ),
-      mg_drv = case_when(
-      age < 4 ~170,
-      age >= 4 & age < 7 ~230,
-      age >= 7 & age < 11 ~230,
-      sex == "F" & age >= 11 & age < 15 ~250,
-      sex == "M" & age >= 11 & age < 15 ~300,
-      sex == "F" & age >= 15 & age < 18 ~250,
-      sex == "M" & age >= 15 & age < 18 ~300,
-      sex == "F" & age >= 18 ~300,
-      sex == "M" & age >= 18 ~350,
-      TRUE ~ NA_real_
+      age_band %in% c("1-3", "4-6", "7-10", "11-14", "15-17", "18-24", "25-50", 
+                      "51-70") ~10,
+      age_band == ">70" ~20,
+      TRUE ~NA_real_
     ),
     
+    vitC_drv = case_when(
+      age_band == "1-3" ~25,
+      age_band == "4-6" ~35,
+      age_band == "7-10" ~55,
+      
+      age_band == "11-14" & sex == "F" ~75,
+      age_band == "15-17" & sex == "F" ~90, 
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~95,
+      
+      age_band == "11-14" & sex == "M" ~80,
+      age_band == "15-17" & sex == "M" ~105,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~110,
+      TRUE ~NA_real_
+    ),
+
+   folate_drv = case_when(
+      age_band == "1-3" ~120,
+      age_band == "4-6" ~140,
+      age_band == "7-10" ~200,
+      
+      age_band == "11-14" & sex == "F" ~280,
+      age_band == "15-17" & sex == "F" ~310,
+      
+      age_band == "11-14" & sex == "M" ~260,
+      age_band == "15-17" & sex == "M" ~320,
+      
+      age_band %in% c("18-24", "25-50", "51-70", ">70") ~330,
+      TRUE ~NA_real_
+    ),
+
+  ca_drv = case_when(
+     age_band == "1-3" ~450,
+     age_band == "4-6" ~800,
+     age_band == "7-10" ~800,
+     
+     age_band %in% c("11-14", "15-17") ~1150,
+     age_band == "18-24" ~1000,
+     age_band %in% c("25-50", "51-70", ">70")  ~950,
+     TRUE ~NA_real_
+    ),
+
+  fe_drv = case_when(
+      age_band == "1-3" ~7,
+      age_band == "4-6" ~7,
+      age_band == "7-10" ~9,
+   
+      age_band == "11-14" & sex == "F" ~13,
+      age_band %in% c("15-17", "18-24", "25-50") & sex == "F" ~15,
+      age_band == "51-70" & sex == "F" ~8,
+      age_band == ">70" & sex == "F" ~7,
+   
+      age_band %in% c("11-14", "15-17") & sex == "M" ~11,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~9,
+      TRUE ~NA_real_
+    ),
+
+  vitE_drv = case_when(
+      age_band == "1-3" ~7,
+      age_band == "4-6" ~8,
+      age_band == "7-10" ~9,
+      
+      age_band == "11-14" & sex == "F" ~10,
+      age_band == "15-17" & sex == "F" ~11,
+      age_band %in% c("18-24", "25-50") & sex == "F" ~10, 
+      age_band %in% c("51-70", ">70") & sex == "F" ~9,                 
+      
+      age_band == "11-14" & sex == "M" ~11,
+      age_band == "15-17" & sex == "M" ~12,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~11,
+      TRUE ~NA_real_
+    ),
+
+   k_drv = case_when(
+      age_band == "1-3" ~850,
+      age_band == "4-6" ~1150,
+      age_band == "7-10" ~1800,
+      
+      age_band == "11-14" & sex == "F" ~2400,
+      age_band == "15-17" & sex == "F" ~2850,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~3500,
+      
+      age_band == "11-14" & sex == "M" ~2550,
+      age_band == "15-17" & sex == "M" ~3400,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~3500,
+      TRUE ~NA_real_
+    ),
+
+    mg_drv = case_when(
+      age_band == "1-3" ~170,
+      age_band %in% c("4-6", "7-10") ~230,
+      
+      age_band %in% c("11-14", "15-17") & sex == "F" ~250,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "F" ~300,
+      
+      age_band %in% c("11-14", "15-17") & sex == "M" ~300,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") & sex == "M" ~350,
+      TRUE ~NA_real_
+    ),
+
     naCl_drv = case_when(
-      age < 4 ~2.75,
-      age >= 4 & age < 7 ~3.5,
-      age >= 7 & age < 11 ~4.25,
-      age >= 11 & age < 18 ~5,
-      age >= 18 ~5.75,
+      age_band == "1-3" ~2.75,
+      age_band == "4-6" ~3.5,
+      age_band == "7-10" ~4.25,
+      
+      age_band %in% c("11-14", "15-17") ~4.25,
+      age_band %in% c("18-24", "25-50", "51-70", ">70") ~5.75,
       TRUE ~ NA_real_
     )
   )
@@ -613,6 +652,8 @@ top10_nrf_capped
 ```{r}
 cor(d6$nrf_capped, d6$kcal, use = "complete.obs")
 cor(d6$nrf_uncapped, d6$kcal, use = "complete.obs")
+
+cor(d6$nrf_uncapped, d6$nrf_capped, use = "complete.obs")
 ```
 
 The capped version of NRF is chosen

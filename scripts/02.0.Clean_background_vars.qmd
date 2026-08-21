@@ -20,7 +20,7 @@ project_root <- normalizePath(file.path(getwd(), ".."))
 dir_data <- file.path(project_root, "data")
 dir_output <- file.path(project_root, "output")
 
-dir.create(dir_output, showWarnings = F, recursive = T)
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 ```
 
@@ -552,19 +552,19 @@ Check
 
 ```{r}
 barn_bg %>% 
-  count(bmi_class, sort = T)
+  count(bmi_class, sort = TRUE)
 ```
 
 Inspect screentime variables
 
 ```{r}
 barn_bg %>% 
-  count(skärm_vardag, sort = T)
+  count(skärm_vardag, sort = TRUE)
 ```
 
 ```{r}
 barn_bg %>% 
-  count(skärm_helgdag, sort = T)
+  count(skärm_helgdag, sort = TRUE)
 ```
 
 Recode to minutes (numeric)
@@ -582,7 +582,7 @@ recode_screen_minutes <- function(x) {
     x == "30 minuter" ~30,
     x == "45 minuter" ~45,
     x == "1 timme" ~60,
-    x == "1,5 timmar" ~85,
+    x == "1,5 timmar" ~90,
     x == "2 timmar" ~120,
     x == "2,5 timmar" ~150,
     x == "3 timmar" ~180,

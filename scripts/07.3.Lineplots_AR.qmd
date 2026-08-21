@@ -50,9 +50,9 @@ vux <- master %>%
 vux_summary <- vux %>% 
   group_by(quintile) %>% 
   summarise(across(pct_vitD:pct_se, list(
-      median = ~median(.x, na.rm = T),
-      p25 = ~quantile(.x, 0.25, na.rm = T),
-      p75 = ~quantile(.x, 0.75, na.rm = T)
+      median = ~median(.x, na.rm = TRUE),
+      p25 = ~quantile(.x, 0.25, na.rm = TRUE),
+      p75 = ~quantile(.x, 0.75, na.rm = TRUE)
     ), .names = "{.col}_{.fn}"))
 
 ```
@@ -97,9 +97,9 @@ ungdom <- master %>%
 ungdom_summary <- ungdom %>% 
   group_by(quintile) %>% 
   summarise(across(pct_vitD:pct_se, list(
-      median = ~median(.x, na.rm = T),
-      p25 = ~quantile(.x, 0.25, na.rm = T),
-      p75 = ~quantile(.x, 0.75, na.rm = T)
+      median = ~median(.x, na.rm = TRUE),
+      p25 = ~quantile(.x, 0.25, na.rm = TRUE),
+      p75 = ~quantile(.x, 0.75, na.rm = TRUE)
     ), .names = "{.col}_{.fn}"))
 
 ```
@@ -135,9 +135,9 @@ barn <- master %>%
 barn_summary <- barn %>% 
   group_by(quintile) %>% 
   summarise(across(pct_vitD:pct_se, list(
-      median = ~median(.x, na.rm = T),
-      p25 = ~quantile(.x, 0.25, na.rm = T),
-      p75 = ~quantile(.x, 0.75, na.rm = T)
+      median = ~median(.x, na.rm = TRUE),
+      p25 = ~quantile(.x, 0.25, na.rm = TRUE),
+      p75 = ~quantile(.x, 0.75, na.rm = TRUE)
     ), .names = "{.col}_{.fn}"))
 
 ```
@@ -314,7 +314,6 @@ ggsave(
 
 ```
 
-
 Extract legend only
 
 ```{r}
@@ -347,7 +346,6 @@ ggsave(
 )
 ```
 
-
 ```{r}
 ggsave(
   filename = file.path(dir_output, "Legend_only.pdf"),
@@ -359,8 +357,3 @@ ggsave(
   bg = "white"
 )
 ```
-
-
-
-
-

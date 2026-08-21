@@ -55,15 +55,15 @@ MIDDLE BOUND SCENARIO
 ```{r}
 vars_to_median_mid <- c("EP_upf_mid", "kcal", "ED_nobev", "EP_prot",  "fiber_dens", "wholegrain_dens", "EP_SFA", "EP_addedsugars", "naCl_dens", "EP_keyhole", "nrf", "vitD_dens", "vitE_dens", "folate_dens", "vitB12_dens", "vitC_dens", "fe_dens", "ca_dens", "k_dens", "se_dens")
 
-ep <- "EP_upf_mid"
-outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep, ".xlsx"))
+ep_mid <- "EP_upf_mid"
+outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep_mid, ".xlsx"))
 ```
 
 Block 1. Basic input checks
 
 ```{r}
 stopifnot(is.data.frame(df))
-stopifnot(all(c("RM", ep, vars_to_median_mid) %in% names(df)))
+stopifnot(all(c("RM", ep_mid, vars_to_median_mid) %in% names(df)))
 
 ```
 
@@ -89,11 +89,11 @@ RM = Vuxna
 d <- df %>% filter(RM == "Vuxna")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_mid]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_mid]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_mid), ~median(.x, na.rm = TRUE)),
@@ -126,11 +126,11 @@ RM = Ungdom
 d <- df %>% filter(RM == "Ungdom")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_mid]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_mid]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_mid), ~median(.x, na.rm = TRUE)),
@@ -163,11 +163,11 @@ RM = Barn
 d <- df %>% filter(RM == "Barn")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_mid]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_mid]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_mid), ~median(.x, na.rm = TRUE)),
@@ -198,9 +198,9 @@ n per quintile
 
 ```{r}
 n_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+  filter(!is.na(.data[[ep_mid]])) %>% 
   group_by(RM) %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_mid]], 5)) %>% 
   count(RM, Q) %>% 
   arrange(RM, Q)
 
@@ -214,13 +214,13 @@ Ranges per quintile
 
 ```{r}
 range_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+  filter(!is.na(.data[[ep_mid]])) %>% 
   group_by(RM) %>%
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_mid]], 5)) %>% 
   group_by(RM, Q) %>%
   summarise(
-    min_EP = min(.data[[ep]], na.rm = TRUE), 
-    max_EP = max(.data[[ep]], na.rm = TRUE),
+    min_EP = min(.data[[ep_mid]], na.rm = TRUE), 
+    max_EP = max(.data[[ep_mid]], na.rm = TRUE),
     .groups = "drop"
   ) %>% 
   arrange(RM, Q)
@@ -247,8 +247,8 @@ Define inputs
 vars_to_median_low <- c("EP_upf_low", "kcal", "ED_nobev", "EP_prot",  "fiber_dens", "wholegrain_dens", "EP_SFA", "EP_addedsugars", "naCl_dens", "EP_keyhole", "nrf", "vitD_dens", "vitE_dens", "folate_dens", "vitB12_dens", "vitC_dens", "fe_dens", "ca_dens", "k_dens", "se_dens")
 
 
-ep <- "EP_upf_low"
-outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep, ".xlsx"))
+ep_low <- "EP_upf_low"
+outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep_low, ".xlsx"))
 ```
 
 Create new Excel workbook
@@ -265,11 +265,11 @@ RM = Vuxna
 d <- df %>% filter(RM == "Vuxna")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_low]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_low]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_low), ~median(.x, na.rm = TRUE)),
@@ -302,11 +302,11 @@ RM = Ungdom
 d <- df %>% filter(RM == "Ungdom")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_low]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_low]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_low), ~median(.x, na.rm = TRUE)),
@@ -339,11 +339,11 @@ RM = Barn
 d <- df %>% filter(RM == "Barn")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_low]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_low]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_low), ~median(.x, na.rm = TRUE)),
@@ -373,38 +373,38 @@ writeData(wb, "Barn", q, startRow = 5)
 n per quintile
 
 ```{r}
-n_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+n_per_quintile_low <- df %>% 
+  filter(!is.na(.data[[ep_low]])) %>% 
   group_by(RM) %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_low]], 5)) %>% 
   count(RM, Q) %>% 
   arrange(RM, Q)
 
-n_per_quintile
+n_per_quintile_low
 
-addWorksheet(wb, "Counts_per_quintile")
-writeData(wb, "Counts_per_quintile", n_per_quintile)
+addWorksheet(wb, "Counts_per_quintile_low")
+writeData(wb, "Counts_per_quintile_low", n_per_quintile_low)
 ```
 
 Ranges per quintile
 
 ```{r}
-range_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+range_per_quintile_low <- df %>% 
+  filter(!is.na(.data[[ep_low]])) %>% 
   group_by(RM) %>%
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_low]], 5)) %>% 
   group_by(RM, Q) %>%
   summarise(
-    min_EP = min(.data[[ep]], na.rm = TRUE), 
-    max_EP = max(.data[[ep]], na.rm = TRUE),
+    min_EP = min(.data[[ep_low]], na.rm = TRUE), 
+    max_EP = max(.data[[ep_low]], na.rm = TRUE),
     .groups = "drop"
   ) %>% 
   arrange(RM, Q)
 
-range_per_quintile
+range_per_quintile_low
 
-addWorksheet(wb, "Range_per_quintile")
-writeData(wb, "Range_per_quintile", range_per_quintile)
+addWorksheet(wb, "Range_per_quintile_low")
+writeData(wb, "Range_per_quintile_low", range_per_quintile_low)
 ```
 
 Save Excel file
@@ -422,8 +422,8 @@ Define inputs
 vars_to_median_up <- c("EP_upf_up", "kcal", "ED_nobev", "EP_prot",  "fiber_dens", "wholegrain_dens", "EP_SFA", "EP_addedsugars", "naCl_dens", "EP_keyhole", "nrf", "vitD_dens", "vitE_dens", "folate_dens", "vitB12_dens", "vitC_dens", "fe_dens", "ca_dens", "k_dens", "se_dens")
 
 
-ep <- "EP_upf_up"
-outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep, ".xlsx"))
+ep_up <- "EP_upf_up"
+outfile <- file.path(dir_output, paste0("Quintiles_summary_", ep_up, ".xlsx"))
 ```
 
 Create new Excel workbook
@@ -440,11 +440,11 @@ RM = Vuxna
 d <- df %>% filter(RM == "Vuxna")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_up]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_up]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_up), ~median(.x, na.rm = TRUE)),
@@ -477,11 +477,11 @@ RM = Ungdom
 d <- df %>% filter(RM == "Ungdom")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_up]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_up]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_up), ~median(.x, na.rm = TRUE)),
@@ -514,11 +514,11 @@ RM = Barn
 d <- df %>% filter(RM == "Barn")
 n_total <- nrow(d)
 
-d <- d %>% filter(!is.na(.data[[ep]]))
+d <- d %>% filter(!is.na(.data[[ep_up]]))
 n_assigned <- nrow(d)
 
 q <- d %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_up]], 5)) %>% 
   group_by(Q) %>% 
   summarise(
     across(all_of(vars_to_median_up), ~median(.x, na.rm = TRUE)),
@@ -548,38 +548,38 @@ writeData(wb, "Barn", q, startRow = 5)
 n per quintile
 
 ```{r}
-n_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+n_per_quintile_up <- df %>% 
+  filter(!is.na(.data[[ep_up]])) %>% 
   group_by(RM) %>% 
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_up]], 5)) %>% 
   count(RM, Q) %>% 
   arrange(RM, Q)
 
-n_per_quintile
+n_per_quintile_up
 
-addWorksheet(wb, "Counts_per_quintile")
-writeData(wb, "Counts_per_quintile", n_per_quintile)
+addWorksheet(wb, "Counts_per_quintile_up")
+writeData(wb, "Counts_per_quintile_up", n_per_quintile_up)
 ```
 
 Ranges per quintile
 
 ```{r}
-range_per_quintile <- df %>% 
-  filter(!is.na(.data[[ep]])) %>% 
+range_per_quintile_up <- df %>% 
+  filter(!is.na(.data[[ep_up]])) %>% 
   group_by(RM) %>%
-  mutate(Q = ntile(.data[[ep]], 5)) %>% 
+  mutate(Q = ntile(.data[[ep_up]], 5)) %>% 
   group_by(RM, Q) %>%
   summarise(
-    min_EP = min(.data[[ep]], na.rm = TRUE), 
-    max_EP = max(.data[[ep]], na.rm = TRUE),
+    min_EP = min(.data[[ep_up]], na.rm = TRUE), 
+    max_EP = max(.data[[ep_up]], na.rm = TRUE),
     .groups = "drop"
   ) %>% 
   arrange(RM, Q)
 
-range_per_quintile
+range_per_quintile_up
 
-addWorksheet(wb, "Range_per_quintile")
-writeData(wb, "Range_per_quintile", range_per_quintile)
+addWorksheet(wb, "Range_per_quintile_up")
+writeData(wb, "Range_per_quintile_up", range_per_quintile_up)
 ```
 
 Save Excel file

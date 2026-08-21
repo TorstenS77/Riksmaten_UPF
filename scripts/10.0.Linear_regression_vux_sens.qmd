@@ -238,7 +238,7 @@ crude <- with(
 )
 
 crude_pooled <- pool(crude)
-crude_pooled_sum <- summary(crude_pooled, conf.int = T)
+crude_pooled_sum <- summary(crude_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(crude$analyses, function(mod) nrow(model.frame(mod)))
@@ -290,7 +290,7 @@ model1 <- with(
 )
 
 model1_pooled <- pool(model1)
-model1_pooled_sum <- summary(model1_pooled, conf.int = T)
+model1_pooled_sum <- summary(model1_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model1$analyses, function(mod) nrow(model.frame(mod)))

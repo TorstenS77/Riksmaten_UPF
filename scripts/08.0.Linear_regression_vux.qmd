@@ -413,7 +413,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))
@@ -757,7 +757,7 @@ model2 <- with(
 )
 
 model2_pooled <- pool(model2)
-model2_pooled_sum <- summary(model2_pooled, conf.int = T)
+model2_pooled_sum <- summary(model2_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model2$analyses, function(mod) nrow(model.frame(mod)))
@@ -801,7 +801,7 @@ model3 <- with(
 )
 
 model3_pooled <- pool(model3)
-model3_pooled_sum <- summary(model3_pooled, conf.int = T)
+model3_pooled_sum <- summary(model3_pooled, conf.int = TRUE)
 
 
 n_per_imp <- sapply(model3$analyses, function(mod) nrow(model.frame(mod)))

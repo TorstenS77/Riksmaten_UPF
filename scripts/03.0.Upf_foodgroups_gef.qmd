@@ -18,7 +18,7 @@ project_root <- normalizePath(file.path(getwd(), ".."))
 dir_data <- file.path(project_root, "data")
 dir_output <- file.path(project_root, "output")
 
-dir.create(dir_output, showWarnings = F, recursive = T)
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 ```
 
@@ -42,6 +42,59 @@ vux <- readRDS(file.path(dir_data,"RM_vux_clean.rds"))
 ungdom <- readRDS(file.path(dir_data, "RM_ungdom_clean.rds"))
 barn <- readRDS(file.path(dir_data, "RM_barn_clean.rds"))
 
+```
+
+Create three separate lists of unique food_ID
+
+```{r}
+vux_foods <- vux %>% 
+  select(food_ID, RM, food) %>% 
+  distinct() %>% 
+  arrange(food_ID)
+
+ungdom_foods <- ungdom %>% 
+  select(food_ID, RM, food) %>% 
+  distinct() %>% 
+  arrange(food_ID)
+
+barn_foods <- barn %>% 
+  select(food_ID, RM, food) %>% 
+  distinct() %>% 
+  arrange(food_ID)
+```
+
+Compare side by side
+
+```{r}
+food_compare <- full_join(
+  vux_foods %>% 
+    rename(
+      RM_vux = RM,
+      food_vux = food
+    ),
+  ungdom_foods %>% 
+    rename(
+      RM_ungdom = RM,
+      food_ungdom = food
+    ),
+  by = "food_ID"
+) %>% 
+  full_join(
+    barn_foods %>% 
+      rename(
+        RM_barn = RM,
+        food_barn = food
+      ),
+    by = "food_ID"
+  ) %>% 
+  arrange(food_ID)
+
+```
+
+Inspect
+
+```{r}
+View(food_compare)
 ```
 
 Combine datasets

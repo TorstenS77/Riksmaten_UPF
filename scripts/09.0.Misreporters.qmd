@@ -185,8 +185,8 @@ excluded_summary <- master %>%
   group_by(RM) %>% 
   summarise(
     total = n(),
-    excluded_under = sum(MJ_perday < PI_low, na.rm = T),
-    excluded_over = sum(MJ_perday > PI_high, na.rm = T),
+    excluded_under = sum(MJ_perday < PI_low, na.rm = TRUE),
+    excluded_over = sum(MJ_perday > PI_high, na.rm = TRUE),
     .groups = "drop"
   ) %>% 
   

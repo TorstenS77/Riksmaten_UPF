@@ -310,10 +310,10 @@ right_label_df <- data.frame(
   upf_category = c("Total Food Items", "Non-UPF", "Partly UPF", "UPF"),
   perc_point = summary_final$pct_keyhole_yes,
   label = c(
-    paste0("n = ", summary_final$pct_keyhole_yes[summary_final$upf_category == "Total"]),
-    paste0("n = ", summary_final$pct_keyhole_yes[summary_final$upf_category == "non-upf"]),
-    paste0("n = ", summary_final$pct_keyhole_yes[summary_final$upf_category == "partly upf"]),
-    paste0("n = ", summary_final$pct_keyhole_yes[summary_final$upf_category == "upf"])
+    paste0(" ",summary_final$pct_keyhole_yes[summary_final$upf_category == "Total"], "%"),
+    paste0(summary_final$pct_keyhole_yes[summary_final$upf_category == "non-upf"], "%"),
+    paste0(summary_final$pct_keyhole_yes[summary_final$upf_category == "partly upf"], "%"),
+    paste0(summary_final$pct_keyhole_yes[summary_final$upf_category == "upf"], "%")
  )
 )
 ```
@@ -354,8 +354,8 @@ p1 <- ggplot(plot_data, aes(x = upf_category, y = perc, fill = keyhole)) +
     data = right_label_df,
     aes(x = upf_category, y = perc_point, label = label),
     inherit.aes = FALSE,
-    hjust = -0.5,
-    size = 3.5
+    hjust = -0.9,
+    size = 3
   ) +
   
   theme_minimal(base_size = 12)+
@@ -379,21 +379,20 @@ Save as image
 ggsave(
   filename = file.path(dir_output, "Stacked_barplot.png"),
   plot = p1,
-  width = 16,
-  height = 12,
+  width = 20,
+  height = 14,
   unit = "cm",
   dpi = 300
 )
 
 ```
 
-
 ```{r}
 ggsave(
   filename = file.path(dir_output, "Stacked_barplot.pdf"),
   plot = p1,
-  width = 16,
-  height = 12,
+  width = 20,
+  height = 14,
   unit = "cm",
   dpi = 300
 )

@@ -26,7 +26,7 @@ project_root <- normalizePath(file.path(getwd(), ".."))
 dir_data <- file.path(project_root, "data")
 dir_output <- file.path(project_root, "output")
 
-dir.create(dir_output, showWarnings = F, recursive = T)
+dir.create(dir_output, showWarnings = FALSE, recursive = TRUE)
 
 ```
 
